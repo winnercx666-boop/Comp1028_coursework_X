@@ -6,7 +6,7 @@ int main()
     SetConsoleOutputCP(65001); //UTF-8
     int num;
     FILE* file[100];
-    char content[10000];
+    char content[1000000];
     char fileLocation[1000];
     char folderLocation[1000];
     
