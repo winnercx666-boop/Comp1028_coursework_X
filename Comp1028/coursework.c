@@ -1,19 +1,20 @@
 #include <stdio.h>
 #include <windows.h>
-int main()
+#include <string.h>
+char content[10000000];
+int  readFile()   // transfer text to content[]
 {
-    
     SetConsoleOutputCP(65001); //UTF-8
     int num;
-    FILE* file[100];
-    char content[1000000];
+    FILE* file[1000];
     char fileLocation[1000];
+    char line[100000];
     char folderLocation[1000];
     
     printf("Please enter how many files: ");
     if(scanf("%d",&num)==0)
     printf("Invalid input.\n");
-    if(num<=0)
+    else if(num<=0)
     printf("Invalid input.\n");
 
     for(int i=0; i<num; i++)
@@ -31,15 +32,27 @@ int main()
     }
     for(int i=0; i<num; i++)
     {
-        while (fgets(content, sizeof(content), file[i]) != NULL)   //Get content here
+        while(fgets(line, sizeof(line), file[i]) != NULL)
         {
-            printf("%s", content);
+            strcat(content, line);
         }
-
     }
     for(int i=0; i<num; i++)
     {
         fclose(file[i]);
     }
+}
+//int tokenize()
+//{
+
+//}
+int main()
+{
+    
+    readFile();
+    printf("%s",content);
+    //tokenize();
+    //
+    Sleep(10000);
     return 0;
 }
