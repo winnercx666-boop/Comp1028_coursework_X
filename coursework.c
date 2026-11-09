@@ -4,13 +4,13 @@
 #include <ctype.h>
 #include <math.h>
 #include <time.h>
-struct text {
+struct text {              
     char filename[300];
     char content[200000];
 };
-struct text txt[6000];
+struct text txt[6000];     //这个结构体用来存放读取的文本
 
-int readFile()
+int readFile()             //这个函数作用：通过输入文件夹的地址，读取文件夹内所有的文本，并保存进txt[]结构体中。
 {
 
     FILE *file;
@@ -23,9 +23,7 @@ int readFile()
 
     folderPath[strcspn(folderPath, "\n")] = '\0';
 
-
-    snprintf(searchPath, sizeof(searchPath),
-             "%s\\*", folderPath);
+    snprintf(searchPath, sizeof(searchPath), "%s\\*", folderPath);
 
     WIN32_FIND_DATAA findData;
 
@@ -72,27 +70,33 @@ int readFile()
 
     return 0;
 }
-//int processDocuments()
-//{
 
-//}
-//int buildIndex()
-//{
 
-//}
+int processDocuments()     //处理读取的文本，删除不用的符号：逗号，句号，空格，换行符等等，并且全部转换为小写字母
+{
 
-//int searchEngine()
-//{
+}
 
-//}
+
+int buildIndex()          //倒排索引
+{
+
+}
+
+
+int searchEngine()         //搜索
+{
+
+}
+
+
 int main()
 {
-    
     readFile();
     printf("%s", txt[1].content);
-    //processDocuments();
-    //buildIndex();
-    //searchEngine();
+    processDocuments();
+    buildIndex();
+    searchEngine();
     Sleep(20000);
     return 0;
-}//"C:\Users\winner\Desktop\C_project\twenty+newsgroups\20_newsgroups\20_newsgroups\alt.atheism"
+}
