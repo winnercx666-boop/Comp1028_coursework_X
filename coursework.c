@@ -91,7 +91,7 @@ int searchEngine()         //搜索
 int main()              //注意：如果想获得文本标题用txt[在这里输入第几个文档（跟windows文件排序一致）].filename获取；文本信息用txt[在这里输入第几个文档（跟windows文件排序一致）].content获取
 {
     readFile();
-    printf("%s", txt[1].content);
+    printf("%s", txt[1].content); //此行仅作为测试用途
     processDocuments();
     buildIndex();
     searchEngine();
