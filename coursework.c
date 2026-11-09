@@ -306,10 +306,8 @@ cleanup:
 int main()
 {
     readFile();
-    printf("The second txt: \n%s", txt[1].content);//仅作为测试用途，输出第二个读取的文档
     processDocuments();
     buildIndex();
     searchEngine();
-    Sleep(20000);
     return 0;
 }
