@@ -11,7 +11,7 @@ struct text {
 struct text txt[6000];     //这个结构体用来存放读取的文本
 
 int readFile()             //这个函数作用：通过输入文件夹的地址，读取文件夹内所有的文本，并保存进txt[]结构体中。
-{
+{                          
 
     FILE *file;
     char folderPath[1000];
@@ -88,7 +88,7 @@ int searchEngine()         //搜索
 }
 
 
-int main()
+int main()              //注意：如果想获得文本标题用txt[在这里输入第几个文档（跟windows文件排序一致）].filename获取；文本信息用txt[在这里输入第几个文档（跟windows文件排序一致）].content获取
 {
     readFile();
     printf("%s", txt[1].content);
