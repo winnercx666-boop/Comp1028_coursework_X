@@ -65,7 +65,6 @@ int readFile()             //这个函数作用：通过输入文件夹的地址
 
     } while (FindNextFileA(hFind, &findData));
 
-    // 9. Release Windows search handle
     FindClose(hFind);
 
     return 0;
