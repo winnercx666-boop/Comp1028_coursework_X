@@ -11,36 +11,39 @@ struct text {
 struct text txt[6000];     //这个结构体用来存放读取的文本
 
 int readFile()             //这个函数作用：通过输入文件夹的地址，读取文件夹内所有的文本，并保存进txt[]结构体中。
-{                          
-
+{
+    SetConsoleOutputCP(65001);
     FILE *file;
     char folderPath[1000];
     char searchPath[1200];
     char filePath[1500];
-
-    printf("Please enter folder path: ");
-    fgets(folderPath, sizeof(folderPath), stdin);
-
-    folderPath[strcspn(folderPath, "\n")] = '\0';
-
-    snprintf(searchPath, sizeof(searchPath), "%s\\*", folderPath);
-
     WIN32_FIND_DATAA findData;
+    HANDLE hFind;
+    while(1)
+    {
+        printf("Please enter folder path: ");
+        fgets(folderPath, sizeof(folderPath), stdin);
 
-    HANDLE hFind = FindFirstFileA(searchPath, &findData);
+        folderPath[strcspn(folderPath, "\n")] = '\0';
 
-    if (hFind == INVALID_HANDLE_VALUE) {
-        printf("No TXT files found.\n");
-        return 1;
+        snprintf(searchPath, sizeof(searchPath), "%s\\*", folderPath);
+
+
+        hFind = FindFirstFileA(searchPath, &findData);
+
+        if (hFind == INVALID_HANDLE_VALUE) {
+            printf("No TXT files found.\n");
+            continue;
+        }
+        break;
     }
-
     do {
-        
+
         static int i=0;
         if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             continue;
         }
-
+        printf("Found: %s\n", findData.cFileName);
 
         snprintf(filePath, sizeof(filePath),
                  "%s\\%s", folderPath, findData.cFileName);
@@ -88,10 +91,10 @@ int searchEngine()         //搜索
 }
 
 
-int main()              //注意：如果想获得文本标题用txt[在这里输入第几个文档（跟windows文件排序一致）].filename获取；文本信息用txt[在这里输入第几个文档（跟windows文件排序一致）].content获取
+int main()
 {
     readFile();
-    printf("%s", txt[1].content); //此行仅作为测试用途
+    printf("The first txt: \n%s", txt[0].content);//仅作为测试用途，输出第一个读取的文档
     processDocuments();
     buildIndex();
     searchEngine();
