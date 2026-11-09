@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <windows.h>
 #include <string.h>
-char content[1000000];
+char content[10000000];
 int  readFile()   // transfer text to content[]
 {
     SetConsoleOutputCP(65001); //UTF-8
