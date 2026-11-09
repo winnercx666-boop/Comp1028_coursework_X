@@ -14,6 +14,7 @@ int readFile()             //这个函数作用：通过输入文件夹的地址
 {
     SetConsoleOutputCP(65001);
     FILE *file;
+    int txtCount,checkEmpty;
     char folderPath[1000];
     char searchPath[1200];
     char filePath[1500];
@@ -21,53 +22,84 @@ int readFile()             //这个函数作用：通过输入文件夹的地址
     HANDLE hFind;
     while(1)
     {
+        txtCount=0;
+        checkEmpty=1;
         printf("Please enter folder path: ");
         fgets(folderPath, sizeof(folderPath), stdin);
 
         folderPath[strcspn(folderPath, "\n")] = '\0';
+        if (strlen(folderPath) == 0)
+        {
+            printf("Folder path cannot be empty.\n\n");
+            continue;
+        }
 
         snprintf(searchPath, sizeof(searchPath), "%s\\*", folderPath);
 
 
         hFind = FindFirstFileA(searchPath, &findData);
 
-        if (hFind == INVALID_HANDLE_VALUE) {
-            printf("No TXT files found.\n");
+        if (hFind == INVALID_HANDLE_VALUE ) {
+            printf("Invalid folder name.\n\n");
+            continue;
+        }
+        int i=0;
+        do {
+
+            if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                continue;
+            }
+            
+            char *ext = strrchr(findData.cFileName, '.');
+
+            if (ext != NULL && _stricmp(ext, ".txt") != 0)
+            {
+                continue;
+            }
+
+            printf("Found: %s\n", findData.cFileName);
+            txtCount++;
+
+            snprintf(filePath, sizeof(filePath),
+                    "%s\\%s", folderPath, findData.cFileName);
+
+            file = fopen(filePath, "r");
+
+            if (file == NULL) {
+                printf("Cannot open the file.\n");
+                continue;
+            }
+
+            char line[1000];
+            while (fgets(line, sizeof(line), file) != NULL) {
+                strcat(txt[i].content,line);
+                checkEmpty=0;
+            }
+            strcpy(txt[i].filename, findData.cFileName);
+
+            fclose(file);
+
+            i++;
+
+        } while (FindNextFileA(hFind, &findData));
+        
+        FindClose(hFind);
+
+        if(txtCount==0)
+        {
+            printf("No txt file found!\n\n");
+            continue;
+        }
+        if(checkEmpty==1)
+        {
+            printf("No txt in the file!\n\n");
             continue;
         }
         break;
+
     }
-    do {
 
-        static int i=0;
-        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            continue;
-        }
-        printf("Found: %s\n", findData.cFileName);
 
-        snprintf(filePath, sizeof(filePath),
-                 "%s\\%s", folderPath, findData.cFileName);
-
-        file = fopen(filePath, "r");
-
-        if (file == NULL) {
-            printf("Cannot open file.\n");
-            continue;
-        }
-
-        char line[1000];
-        while (fgets(line, sizeof(line), file) != NULL) {
-            strcat(txt[i].content,line);
-        }
-        strcpy(txt[i].filename, findData.cFileName);
-
-        fclose(file);
-
-        i++;
-
-    } while (FindNextFileA(hFind, &findData));
-
-    FindClose(hFind);
 
     return 0;
 }
@@ -94,7 +126,7 @@ int searchEngine()         //搜索
 int main()
 {
     readFile();
-    printf("The first txt: \n%s", txt[0].content);//仅作为测试用途，输出第一个读取的文档
+    printf("The second txt: \n%s", txt[1].content);//仅作为测试用途，输出第二个读取的文档
     processDocuments();
     buildIndex();
     searchEngine();
