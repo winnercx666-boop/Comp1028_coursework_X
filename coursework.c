@@ -55,4 +55,4 @@ int main()
     //
     Sleep(20000);
     return 0;
-}//C:\Users\winner\Desktop\C_project\twenty+newsgroups\20_newsgroups\20_newsgroups\alt.atheism\49960
+}
