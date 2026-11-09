@@ -1,48 +1,87 @@
 #include <stdio.h>
 #include <windows.h>
 #include <string.h>
-char content[10000000];
-int  readFile()   // transfer text to content[]
+#include <ctype.h>
+#include <math.h>
+#include <time.h>
+struct text {
+    char filename[300];
+    char content[200000];
+};
+struct text txt[6000];
+
+int readFile()
 {
-    SetConsoleOutputCP(65001); //UTF-8
-    int num;
-    FILE* file[1000];
-    char fileLocation[1000];
-    char line[100000];
-    char folderLocation[1000];
-    
-    printf("Please enter how many files: ");
-    if(scanf("%d",&num)==0)
-    printf("Invalid input.\n");
-    else if(num<=0)
-    printf("Invalid input.\n");
 
-    for(int i=0; i<num; i++)
-    {
-        printf("Please enter the location: ");
-        scanf("%s", fileLocation);
-        file[i] = fopen(fileLocation, "r");
+    FILE *file;
+    char folderPath[1000];
+    char searchPath[1200];
+    char filePath[1500];
 
-        if (file[i] == NULL)
-        {
-            printf("Cannot open the file! Please type it again: \n");
-            i--;
+    printf("Please enter folder path: ");
+    fgets(folderPath, sizeof(folderPath), stdin);
+
+    folderPath[strcspn(folderPath, "\n")] = '\0';
+
+
+    snprintf(searchPath, sizeof(searchPath),
+             "%s\\*", folderPath);
+
+    WIN32_FIND_DATAA findData;
+
+    HANDLE hFind = FindFirstFileA(searchPath, &findData);
+
+    if (hFind == INVALID_HANDLE_VALUE) {
+        printf("No TXT files found.\n");
+        return 1;
+    }
+
+    do {
+        
+        static int i=0;
+        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             continue;
         }
-    }
-    for(int i=0; i<num; i++)
-    {
-        while(fgets(line, sizeof(line), file[i]) != NULL)
-        {
-            strcat(content, line);
+
+
+        snprintf(filePath, sizeof(filePath),
+                 "%s\\%s", folderPath, findData.cFileName);
+
+        file = fopen(filePath, "r");
+
+        if (file == NULL) {
+            printf("Cannot open file.\n");
+            continue;
         }
-    }
-    for(int i=0; i<num; i++)
-    {
-        fclose(file[i]);
-    }
+
+        char line[1000];
+        while (fgets(line, sizeof(line), file) != NULL) {
+            strcat(txt[i].content,line);
+        }
+        strcpy(txt[i].filename, findData.cFileName);
+
+        // 8. Close file
+        fclose(file);
+
+        i++;
+
+    } while (FindNextFileA(hFind, &findData));
+
+    // 9. Release Windows search handle
+    FindClose(hFind);
+
+    return 0;
 }
-//int tokenize()
+//int processDocuments()
+//{
+
+//}
+//int buildIndex()
+//{
+
+//}
+
+//int searchEngine()
 //{
 
 //}
@@ -50,9 +89,10 @@ int main()
 {
     
     readFile();
-    printf("%s",content);
-    //tokenize();
-    //
+    printf("%s", txt[1].content);
+    //processDocuments();
+    //buildIndex();
+    //searchEngine();
     Sleep(20000);
     return 0;
-}
+}//"C:\Users\winner\Desktop\C_project\twenty+newsgroups\20_newsgroups\20_newsgroups\alt.atheism"
