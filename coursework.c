@@ -58,7 +58,6 @@ int readFile()             //这个函数作用：通过输入文件夹的地址
         }
         strcpy(txt[i].filename, findData.cFileName);
 
-        // 8. Close file
         fclose(file);
 
         i++;
