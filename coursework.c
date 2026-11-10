@@ -1,7 +1,7 @@
 #include <stdio.h>
-#include <windows.h>
 #include <string.h>
 #include <ctype.h>
+#include <windows.h>
 #include <math.h>
 #include <time.h>
 struct text {              
@@ -104,17 +104,6 @@ int readFile()             //这个函数作用：通过输入文件夹的地址
     return 0;
 }
 
-
-int processDocuments()     //处理读取的文本，删除不用的符号：逗号，句号，空格，换行符等等，并且全部转换为小写字母
-{
-
-}
-
-
-int buildIndex()          //倒排索引
-{
-
-}
 
 
 int searchEngine()         //搜索
@@ -306,8 +295,6 @@ cleanup:
 int main()
 {
     readFile();
-    processDocuments();
-    buildIndex();
     searchEngine();
     return 0;
 }
