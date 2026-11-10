@@ -57,15 +57,10 @@ int readFile()             ////这个函数作用：通过输入文件夹的地�
         while ((entry = readdir(dir)) != NULL)
         {
 
-            if (strcmp(entry->d_name, ".") == 0 ||
-                strcmp(entry->d_name, "..") == 0)
-            {
-                continue;
-            }
 
             char *ext = strrchr(entry->d_name, '.');
 
-            if (ext == NULL || strcasecmp(ext, ".txt") != 0)
+            if (ext != NULL && strcasecmp(ext, ".txt") != 0 )
             {
                 continue;
             }
