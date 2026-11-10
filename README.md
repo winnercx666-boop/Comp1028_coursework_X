@@ -1,6 +1,6 @@
 # comp1028
 
-Instructions: Users need to enter the folder path(Example:C:\Users\Desktop\C_project\twenty+newsgroups\20_newsgroups\20_newsgroups\alt.atheism), the this program can automatically load the text file inside the folder.
+Instructions: Users need to enter the folder path(Example:C:\Users\Desktop\C_project\twenty+newsgroups\20_newsgroups\20_newsgroups\alt.atheism), then this program can automatically load the text file inside the folder.
 
 
 
