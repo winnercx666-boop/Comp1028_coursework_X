@@ -151,14 +151,16 @@ int searchEngine()         //搜索
         struct Posting *next;
     };
     struct Term {
-        char *word;
         struct Posting *postings;
         struct Term *next;
+        unsigned long long lastQuery;
+        char word[];
     };
     static struct Term *index[BUCKETS];
     unsigned long scores[sizeof txt / sizeof txt[0]];
     int docCount = 0;
     int status = 0;
+    unsigned long long queryNumber = 0;
     char query[QUERY_SIZE];
 
     while (docCount < (int)(sizeof txt / sizeof txt[0]) &&
@@ -173,8 +175,7 @@ int searchEngine()         //搜索
     for (int docId = 0; ; ) {
         int indexing = docId < docCount;
         const char *cursor;
-        const struct Term *seen[QUERY_SIZE];
-        size_t seenCount = 0;
+        int hasMatch = 0;
 
         if (indexing) {
             cursor = txt[docId].content;
@@ -195,6 +196,7 @@ int searchEngine()         //搜索
             query[strcspn(query, "\r\n")] = '\0';
             if (strcmp(query, "/exit") == 0)
                 break;
+            ++queryNumber;
             memset(scores, 0, sizeof scores);
             cursor = query;
         }
@@ -208,15 +210,16 @@ int searchEngine()         //搜索
             while (*cursor && !isalpha((unsigned char)*cursor))
                 ++cursor;
             while (isalpha((unsigned char)*cursor)) {
-                if (length < sizeof word)
-                    word[length++] = (char)tolower((unsigned char)*cursor);
+                if (length < sizeof word) {
+                    unsigned char letter = (unsigned char)tolower((unsigned char)*cursor);
+                    word[length++] = (char)letter;
+                    hash = hash * 31 + letter;
+                }
                 ++cursor;
             }
             if (length == 0 || length == sizeof word)
                 continue;
             word[length] = '\0';
-            for (size_t i = 0; i < length; ++i)
-                hash = hash * 31 + (unsigned char)word[i];
 
             struct Term **slot = &index[hash % BUCKETS];
             while (*slot && strcmp((*slot)->word, word) != 0)
@@ -227,10 +230,10 @@ int searchEngine()         //搜索
                     struct Term *term = malloc(sizeof *term + length + 1);
                     if (!term)
                         goto allocation_error;
-                    term->word = (char *)(term + 1);
                     strcpy(term->word, word);
                     term->postings = NULL;
                     term->next = NULL;
+                    term->lastQuery = 0;
                     *slot = term;
                 }
 
@@ -244,14 +247,10 @@ int searchEngine()         //搜索
                     *entry = (struct Posting){docId, 1, posting};
                     (*slot)->postings = entry;
                 }
-            } else if (*slot) {
+            } else if (*slot && (*slot)->lastQuery != queryNumber) {
                 // 重复的查询词只计一次，分数为所有命中词的词频之和。
-                size_t i = 0;
-                while (i < seenCount && seen[i] != *slot)
-                    ++i;
-                if (i < seenCount)
-                    continue;
-                seen[seenCount++] = *slot;
+                (*slot)->lastQuery = queryNumber;
+                hasMatch = 1;
                 for (struct Posting *p = (*slot)->postings; p; p = p->next)
                     scores[p->docId] += p->frequency;
             }
@@ -261,7 +260,7 @@ int searchEngine()         //搜索
             ++docId;
             continue;
         }
-        if (seenCount == 0) {
+        if (!hasMatch) {
             puts("No matching documents.");
             continue;
         }
