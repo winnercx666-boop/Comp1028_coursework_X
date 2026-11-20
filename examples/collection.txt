@@ -1,0 +1,4 @@
+# Relative to this list file's directory.
+documents/a.txt
+documents/b.txt
+documents/empty.txt
