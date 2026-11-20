@@ -1,339 +1,301 @@
-#include <stdio.h>
-#include <string.h>
+#include "collection.h"
+#include "persistence.h"
+#include "statistics.h"
+
 #include <ctype.h>
-#include <windows.h>
-#include <dirent.h>
-#include <math.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-struct text {              
-    char filename[300];
-    char content[200000];
-};
-struct text txt[6000];     //这个结构体用来存放读取的文本
 
-int readFile()             ////这个函数作用：通过输入文件夹的地址，读取文件夹内所有的文本，并保存进txt[]结构体中。
+/* Read and drain a whole line: 1 = success, 0 = EOF, -1 = overlong/error. */
+static int read_line(char *buffer, size_t capacity)
 {
-    DIR *dir;
-    struct dirent *entry;
-    FILE *file;
-
-    int txtCount;
-    int checkEmpty;
-
-    char folderPath[1000];
-    char filePath[1500];
-
-    while (1)
-    {
-        txtCount = 0;
-        checkEmpty = 1;
-
-
-        printf("Please enter folder path: ");
-
-        if (fgets(folderPath, sizeof(folderPath), stdin) == NULL)
-        {
+    if (!fgets(buffer, (int)capacity, stdin))
+        return ferror(stdin) ? -1 : 0;
+    if (!strchr(buffer, '\n')) {
+        int ch = getchar();
+        if (ch != '\n' && ch != EOF) {
+            while ((ch = getchar()) != '\n' && ch != EOF)
+                ;
+            puts("Input is too long. Please try again.");
             return -1;
         }
-
-        folderPath[strcspn(folderPath, "\n")] = '\0';
-
-        if (strlen(folderPath) == 0)
-        {
-            printf("Folder path cannot be empty.\n\n");
-            continue;
-        }
-
-
-        dir = opendir(folderPath);
-
-        if (dir == NULL)
-        {
-            printf("Invalid folder name.\n\n");
-            continue;
-        }
-
-
-        while ((entry = readdir(dir)) != NULL)
-        {
-
-
-            char *ext = strrchr(entry->d_name, '.');
-
-            if (ext != NULL && strcasecmp(ext, ".txt") != 0 )
-            {
-                continue;
-            }
-
-  
-            snprintf(filePath, sizeof(filePath),
-                     "%s/%s", folderPath, entry->d_name);
-
-
-            file = fopen(filePath, "r");
-
-            if (file == NULL)
-            {
-                printf("Cannot open the file.\n");
-                continue;
-            }
-
-            printf("Found: %s\n", entry->d_name);
-
-            if (txtCount >= 6000)
-            {
-                printf("Maximum file limit reached.\n");
-                break;
-            }
-
-
-            txt[txtCount].content[0] = '\0';
-
-            char line[1000];
-
-            while (fgets(line, sizeof(line), file) != NULL)
-            {
-                size_t currentLength = strlen(txt[txtCount].content);
-                size_t lineLength = strlen(line);
-
-                if (currentLength + lineLength >=
-                    sizeof(txt[txtCount].content))
-                {
-                    printf("Overflow!\n");
-                    break;
-                }
-
-                strcat(txt[txtCount].content, line);
-
-                checkEmpty = 0;
-            }
-
-
-            strcpy(txt[txtCount].filename, entry->d_name);
-
-            fclose(file);
-
-            txtCount++;
-        }
-
-
-        closedir(dir);
-
-        if (txtCount == 0)
-        {
-            printf("No txt file found!\n\n");
-            continue;
-        }
-
-        if (checkEmpty == 1)
-        {
-            printf("No txt in the file!\n\n");
-            continue;
-        }
-
-        break;
     }
-
-    printf("\nSuccessfully loaded %d txt files.\n", txtCount);
-
-    return txtCount;
+    buffer[strcspn(buffer, "\r\n")] = '\0';
+    return 1;
 }
 
-
-
-int searchEngine()         //搜索
+static int parse_number(const char *text, long minimum, long maximum, long *value)
 {
-    // 临时倒排索引：每个词通过链表记录出现过的文档和词频。
-    enum { BUCKETS = 65537, QUERY_SIZE = 1024 };
-    struct Posting {
-        int docId;
-        unsigned frequency;
-        struct Posting *next;
-    };
-    struct Term {
-        struct Posting *postings;
-        struct Term *next;
-        unsigned long long lastQuery;
-        char word[];
-    };
-    static struct Term *index[BUCKETS];
-    unsigned long scores[sizeof txt / sizeof txt[0]];
-    int docCount = 0;
-    int status = 0;
-    unsigned long long queryNumber = 0;
-    char query[QUERY_SIZE];
+    char *end;
+    errno = 0;
+    long number = strtol(text, &end, 10);
+    if (end == text || errno == ERANGE)
+        return 0;
+    while (isspace((unsigned char)*end))
+        ++end;
+    if (*end || number < minimum || number > maximum)
+        return 0;
+    *value = number;
+    return 1;
+}
 
-    while (docCount < (int)(sizeof txt / sizeof txt[0]) &&
-           txt[docCount].filename[0] != '\0')
-        ++docCount;
-    if (docCount == 0) {
-        puts("No documents loaded.");
+static int read_path(char *path, size_t size, const char *default_path)
+{
+    printf("Output/input file (Enter for %s): ", default_path);
+    fflush(stdout);
+    if (read_line(path, size) != 1)
+        return 0;
+    if (!*path)
+        snprintf(path, size, "%s", default_path);
+    return 1;
+}
+
+static int require_index(const SearchIndex *index)
+{
+    if (index->ready)
+        return 1;
+    puts("Load a collection and build an index, or load a saved index first.");
+    return 0;
+}
+
+static int readFile(SearchIndex *active)
+{
+    char path[4096], error[256];
+#ifdef ENABLE_DIRECTORY_INPUT
+    printf("Folder or collection-list path: ");
+#else
+    printf("Collection-list path (one document path per line): ");
+#endif
+    fflush(stdout);
+    if (read_line(path, sizeof path) != 1)
+        return 0;
+    SearchIndex *candidate = malloc(sizeof *candidate);
+    if (!candidate) {
+        puts("Could not allocate a new collection.");
         return 0;
     }
+    index_init(candidate);
+    clock_t start = clock();
+    if (!collection_load(candidate, path, error, sizeof error)) {
+        printf("Collection not loaded: %s\n", error);
+        free(candidate);
+        return 0;
+    }
+    if (!index_build(candidate)) {
+        puts("Could not build the index. The previous collection is still available.");
+        index_free(candidate);
+        free(candidate);
+        return 0;
+    }
+    clock_t end = clock();
+    index_free(active);
+    *active = *candidate;
+    free(candidate);
+    printf("Loaded %zu documents and built %zu terms / %zu postings.\n",
+           active->doc_count, active->term_count, active->posting_count);
+    if (start != (clock_t)-1 && end != (clock_t)-1)
+        printf("Load + build CPU time: %.6f seconds\n", (double)(end - start) / CLOCKS_PER_SEC);
+    return 1;
+}
 
-    // 第一轮只建索引。之后每轮处理一次查询，复用相同的分词规则。
-    for (int docId = 0; ; ) {
-        int indexing = docId < docCount;
-        const char *cursor;
-        int hasMatch = 0;
-
-        if (indexing) {
-            cursor = txt[docId].content;
-        } else {
-            printf("\nSearch query (/exit to return): ");
-            fflush(stdout);
-            if (!fgets(query, sizeof query, stdin))
-                break;
-            if (!strchr(query, '\n') && !feof(stdin)) {
-                int ch = getchar();
-                if (ch != '\n' && ch != EOF) {
-                    while ((ch = getchar()) != '\n' && ch != EOF)
-                        ;
-                    puts("Query is too long.");
-                    continue;
-                }
-            }
-            query[strcspn(query, "\r\n")] = '\0';
-            if (strcmp(query, "/exit") == 0)
-                break;
-            ++queryNumber;
-            memset(scores, 0, sizeof scores);
-            cursor = query;
-        }
-
-        // 英文字母组成词，其他字符作为分隔符，统一转成小写。
-        while (*cursor) {
-            char word[QUERY_SIZE];
-            size_t length = 0;
-            unsigned long hash = 0;
-
-            while (*cursor && !isalpha((unsigned char)*cursor))
-                ++cursor;
-            while (isalpha((unsigned char)*cursor)) {
-                if (length < sizeof word) {
-                    unsigned char letter = (unsigned char)tolower((unsigned char)*cursor);
-                    word[length++] = (char)letter;
-                    hash = hash * 31 + letter;
-                }
-                ++cursor;
-            }
-            if (length == 0 || length == sizeof word)
-                continue;
-            word[length] = '\0';
-
-            struct Term **slot = &index[hash % BUCKETS];
-            while (*slot && strcmp((*slot)->word, word) != 0)
-                slot = &(*slot)->next;
-
-            if (indexing) {
-                if (!*slot) {
-                    struct Term *term = malloc(sizeof *term + length + 1);
-                    if (!term)
-                        goto allocation_error;
-                    strcpy(term->word, word);
-                    term->postings = NULL;
-                    term->next = NULL;
-                    term->lastQuery = 0;
-                    *slot = term;
-                }
-
-                struct Posting *posting = (*slot)->postings;
-                if (posting && posting->docId == docId) {
-                    ++posting->frequency;
-                } else {
-                    struct Posting *entry = malloc(sizeof *entry);
-                    if (!entry)
-                        goto allocation_error;
-                    *entry = (struct Posting){docId, 1, posting};
-                    (*slot)->postings = entry;
-                }
-            } else if (*slot && (*slot)->lastQuery != queryNumber) {
-                // 重复的查询词只计一次，分数为所有命中词的词频之和。
-                (*slot)->lastQuery = queryNumber;
-                hasMatch = 1;
-                for (struct Posting *p = (*slot)->postings; p; p = p->next)
-                    scores[p->docId] += p->frequency;
-            }
-        }
-
-        if (indexing) {
-            ++docId;
+static void searchEngine(SearchIndex *index, SearchResult *last_results,
+                         size_t *last_count, char *last_query)
+{
+    if (!require_index(index))
+        return;
+    char query[MAX_QUERY_BYTES + 1];
+    char input[128];
+    SearchResult results[MAX_DOCUMENTS];
+    for (;;) {
+        printf("\nSearch query (/exit to return): ");
+        fflush(stdout);
+        int status = read_line(query, sizeof query);
+        if (status == 0)
+            return;
+        if (status < 0) {
+            if (ferror(stdin))
+                return;
             continue;
         }
-        if (!hasMatch) {
+        if (!strcmp(query, "/exit"))
+            return;
+        int has_letter = 0;
+        for (size_t i = 0; query[i]; ++i)
+            if ((query[i] >= 'A' && query[i] <= 'Z') ||
+                (query[i] >= 'a' && query[i] <= 'z'))
+                has_letter = 1;
+        if (!has_letter) {
+            puts("Enter a query containing at least one English letter.");
+            continue;
+        }
+        size_t count = index_search(index, query, results, MAX_DOCUMENTS);
+        if (!count) {
+            strcpy(last_query, query);
+            *last_count = 0;
             puts("No matching documents.");
             continue;
         }
-
-        int topK = 5;
         printf("Top K (Enter for 5): ");
         fflush(stdout);
-        if (!fgets(query, sizeof query, stdin))
-            break;
-        if (!strchr(query, '\n') && !feof(stdin)) {
-            int ch;
-            while ((ch = getchar()) != '\n' && ch != EOF)
-                ;
-            puts("Enter a valid Top K.");
+        if (read_line(input, sizeof input) != 1)
+            return;
+        long requested = 5;
+        if (*input && !parse_number(input, 1, MAX_DOCUMENTS, &requested)) {
+            puts("Enter a positive whole number between 1 and 6000.");
             continue;
         }
-        query[strcspn(query, "\r\n")] = '\0';
-        if (query[0]) {
-            char *end;
-            long requested = strtol(query, &end, 10);
-            if (*end || requested <= 0) {
-                puts("Enter a positive whole number.");
-                continue;
-            }
-            topK = requested > docCount ? docCount : (int)requested;
-        }
-
-        // 每次取剩余的最高分，同分时先显示文档编号较小的文件。
-        puts("Rank\tFile\tScore");
-        for (int rank = 1; rank <= topK; ++rank) {
-            int best = -1;
-            for (int id = 0; id < docCount; ++id) {
-                if (scores[id] > 0 && (best < 0 || scores[id] > scores[best]))
-                    best = id;
-            }
-            if (best < 0)
-                break;
-            printf("%d\t%s\t%lu\n", rank, txt[best].filename, scores[best]);
-            scores[best] = 0;
-        }
+        if (count > (size_t)requested)
+            count = (size_t)requested;
+        puts("Rank\tDocument ID\tFile\tScore");
+        for (size_t rank = 0; rank < count; ++rank)
+            printf("%zu\t%d\t%s\t%zu\n", rank + 1, results[rank].docId,
+                   index->documents[results[rank].docId].filename, results[rank].score);
+        memcpy(last_results, results, count * sizeof *results);
+        *last_count = count;
+        strcpy(last_query, query);
     }
-    status = ferror(stdin) != 0;
-    goto cleanup;
-
-allocation_error:
-    fputs("Could not allocate the search index.\n", stderr);
-    status = 1;
-
-cleanup:
-    for (size_t i = 0; i < BUCKETS; ++i) {
-        while (index[i]) {
-            struct Term *term = index[i];
-            index[i] = term->next;
-            while (term->postings) {
-                struct Posting *entry = term->postings;
-                term->postings = entry->next;
-                free(entry);
-            }
-            free(term);
-        }
-    }
-    return status;
 }
 
-
-int main()
+static void view_document(const SearchIndex *index)
 {
-    if(readFile()==-1)
-    {
-        printf("File loading failed.\n");
+    if (!require_index(index))
+        return;
+    if (!index->doc_count) {
+        puts("The collection contains no documents.");
+        return;
+    }
+    char input[128];
+    printf("Document ID (0-%zu): ", index->doc_count - 1);
+    fflush(stdout);
+    if (read_line(input, sizeof input) != 1)
+        return;
+    long id;
+    if (!parse_number(input, 0, (long)index->doc_count - 1, &id)) {
+        puts("Invalid document ID.");
+        return;
+    }
+    printf("\n%s\n%s\n", index->documents[id].filename,
+           index->documents[id].content ? index->documents[id].content : "");
+}
+
+static void show_menu(void)
+{
+    puts("\nDocument Search and Information Retrieval System\n"
+         "1. Load collection + build index\n"
+         "2. Rebuild current index\n"
+         "3. Show collection, document and index statistics\n"
+         "4. Search\n"
+         "5. View document\n"
+         "6. Save text report\n"
+         "7. Save CSV report\n"
+         "8. Save index\n"
+         "9. Load saved index\n"
+         "0. Exit");
+    printf("Choice: ");
+    fflush(stdout);
+}
+
+int main(void)
+{
+    SearchIndex *index = malloc(sizeof *index);
+    SearchResult *last_results = malloc(MAX_DOCUMENTS * sizeof *last_results);
+    if (!index || !last_results) {
+        free(index);
+        free(last_results);
+        fputs("Could not allocate the application.\n", stderr);
         return 1;
     }
-    searchEngine();
-    Sleep(20000);
-    return 0;
+    index_init(index);
+    size_t last_count = 0;
+    char last_query[MAX_QUERY_BYTES + 1] = "";
+    char input[128], path[4096], error[256];
+    int done = 0;
+    while (!done) {
+        show_menu();
+        int status = read_line(input, sizeof input);
+        if (status == 0)
+            break;
+        if (status < 0) {
+            if (ferror(stdin))
+                break;
+            continue;
+        }
+        long choice;
+        if (!parse_number(input, 0, 9, &choice)) {
+            puts("Invalid menu choice. Enter a number from 0 to 9.");
+            continue;
+        }
+        switch (choice) {
+        case 0:
+            done = 1;
+            break;
+        case 1:
+            if (readFile(index)) {
+                last_count = 0;
+                last_query[0] = '\0';
+            }
+            break;
+        case 2:
+            if (!index->doc_count) {
+                puts("No documents loaded.");
+                break;
+            }
+            if (index_build(index))
+                puts("Index rebuilt.");
+            else
+                puts("Could not rebuild the index.");
+            last_count = 0;
+            last_query[0] = '\0';
+            break;
+        case 3:
+            statistics_print(index, stdout);
+            break;
+        case 4:
+            searchEngine(index, last_results, &last_count, last_query);
+            break;
+        case 5:
+            view_document(index);
+            break;
+        case 6:
+        case 7:
+            if (!require_index(index) ||
+                !read_path(path, sizeof path, choice == 6 ? "report.txt" : "report.csv"))
+                break;
+            if (statistics_export(index, *last_query ? last_results : NULL,
+                                  last_count, *last_query ? last_query : NULL,
+                                  path, choice == 7, error, sizeof error))
+                printf("Report saved to %s\n", path);
+            else
+                printf("Report not saved: %s\n", error);
+            break;
+        case 8:
+            if (!require_index(index) || !read_path(path, sizeof path, "index.idx"))
+                break;
+            if (index_save(index, path, error, sizeof error))
+                printf("Index saved to %s\n", path);
+            else
+                printf("Index not saved: %s\n", error);
+            break;
+        case 9:
+            if (!read_path(path, sizeof path, "index.idx"))
+                break;
+            if (index_load(index, path, error, sizeof error)) {
+                printf("Index loaded without rebuilding: %zu documents, %zu terms.\n",
+                       index->doc_count, index->term_count);
+                last_count = 0;
+                last_query[0] = '\0';
+            } else {
+                printf("Index not loaded: %s\n", error);
+            }
+            break;
+        }
+    }
+    int status = ferror(stdin) ? 1 : 0;
+    index_free(index);
+    free(index);
+    free(last_results);
+    return status;
 }
