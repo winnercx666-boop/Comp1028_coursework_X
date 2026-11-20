@@ -1,210 +1,210 @@
-# 任务 6 和 9：从菜单到代码的学习指南
+# Tasks 6 and 9: A Beginner's Guide from the Menu to the Code
 
-先把菜单和你负责的任务对应起来：
+Start by connecting the menu options to the tasks you are responsible for:
 
-| 菜单选项 | 功能 | 对应任务 |
+| Menu option | Function | Task |
 | --- | --- | --- |
-| 3 | 显示集合、各文档和索引统计 | 任务 6 |
-| 6 | 导出 `report.txt`，有最近查询时也导出其结果 | 任务 6 |
-| 7 | 导出 `report.csv`，有最近查询时也导出其结果 | 任务 6 |
-| 8 | 保存当前索引，默认文件名 `index.idx` | 任务 9 |
-| 9 | 载入保存的索引，默认文件名 `index.idx` | 任务 9 |
+| 3 | Display collection, per-document, and index statistics | Task 6 |
+| 6 | Export `report.txt`, including the most recent displayed search results when available | Task 6 |
+| 7 | Export `report.csv`, including the most recent displayed search results when available | Task 6 |
+| 8 | Save the current index; the default filename is `index.idx` | Task 9 |
+| 9 | Load a saved index; the default filename is `index.idx` | Task 9 |
 
-菜单 1 负责载入文档集合并建立索引，菜单 4 用于搜索，菜单 5 查看文档。它们为演示任务 6 和 9 提供输入和验证方式。菜单 2 会重新对当前原文建立索引；演示任务 9 的重新载入时不需要选择它。
+Menu option 1 loads a document collection and builds its index. Option 4 performs searches, and option 5 displays a document. These options provide the input and checks needed to demonstrate tasks 6 and 9. Option 2 rebuilds the index by processing the current document text again; you do not need it when demonstrating a saved-index reload.
 
-## 推荐阅读顺序
+## Recommended Reading Order
 
-1. **先看 `coursework.c` 的 `show_menu` 和 `main`。** 找到 `switch` 中的 `case 3`、`case 6`、`case 7`、`case 8`、`case 9`，看每个菜单最终调用哪个函数。暂时不必逐行读完搜索交互代码。
-2. **再看 `search_index.h`。** 它说明文档、词、倒排记录和整个索引在内存中是什么样子，也声明各模块共用的索引函数。
-3. **看 `statistics.h` 和 `statistics.c`。** 先理解 `statistics_print`、`statistics_export` 的参数和返回值，再看 TXT 输出和 CSV 字段转义。
-4. **看 `persistence.h`，配合 [索引格式说明](index-format.md) 读 `persistence.c`。** 先读 `index_save`，明白写入了什么，再读 `index_load` 怎样把它恢复。
-5. **最后读 `index.c` 的 `index_add_posting`、`index_build`、`index_free`。** 这样可以解释统计值从哪里来、载入怎样恢复记录，以及内存由谁释放。文档输入方式则看 `collection.h`、`collection.c`。
+1. **Start with `show_menu` and `main` in `coursework.c`.** Find `case 3`, `case 6`, `case 7`, `case 8`, and `case 9` inside the `switch` statement, and identify the function called by each option. You do not need to read the entire search interaction line by line yet.
+2. **Read `search_index.h`.** It defines how documents, terms, posting entries, and the complete index are represented in memory. It also declares the index functions shared by the modules.
+3. **Read `statistics.h` and `statistics.c`.** First understand the parameters and return values of `statistics_print` and `statistics_export`. Then examine the text output and CSV field escaping.
+4. **Read `persistence.h`, then use the [index format documentation](index-format.md) while reading `persistence.c`.** Begin with `index_save` to understand what is written. Then read how `index_load` restores it.
+5. **Finally, read `index_add_posting`, `index_build`, and `index_free` in `index.c`.** These explain where the counters come from, how loading restores records, and how memory is released. Document input is handled by `collection.h` and `collection.c`.
 
-完整编译命令和运行步骤见项目根目录的 [README](../README.md)。不要只编译某一个新增模块，也不要把 `.c` 文件写进 `#include`；头文件提供声明，各 `.c` 文件一起编译和链接。
+The complete compilation commands and startup instructions are in the project's [README](../README.md). Compile and link the production `.c` files together. Header files provide declarations; do not include a `.c` file with `#include` or try to build only one added module.
 
-## 先理解四种数据
+## Understand the Four Main Data Types
 
-### `Document`：一份文档
+### `Document`: One Document
 
-`Document` 中保存文件名、原文内容指针 `content`、总词数和唯一词数。`documents[0]` 表示文档 ID 为 0 的文档。文档 ID 从 0 开始，搜索结果排名从 1 开始，两者用途不同。
+A `Document` stores its filename, a `content` pointer to the original text, its total term count, and its unique term count. `documents[0]` is the document with ID 0. Document IDs start at 0; search-result ranks start at 1.
 
-`filename` 是结构体内的固定数组；`content` 是指向另外申请的原文空间的指针。结构体中有一个指针，并不表示原文字符也存放在结构体内部。
+`filename` is a fixed-size array inside the structure. `content` points to separately allocated text storage. Storing a pointer in a structure does not store all the text characters inside that structure.
 
-### `Posting`：一个词与一份文档的关系
+### `Posting`: One Term-Document Relationship
 
-一条 `Posting` 主要包含：
+A `Posting` contains:
 
-- `docId`：这个词出现在哪份文档中。
-- `frequency`：这个词在该文档中出现多少次。
-- `next`：下一条倒排记录的地址，末尾为 `NULL`。
+- `docId`: the document containing this term.
+- `frequency`: how many times the term occurs in that document.
+- `next`: the address of the next posting entry, or `NULL` at the end.
 
-例如，`apple` 在文档 0 中出现两次，对应一条 `docId = 0, frequency = 2` 的记录。它不会因为出现两次就变成两个“词—文档”关系。
+If `apple` appears twice in document 0, there is one entry with `docId = 0` and `frequency = 2`. The two occurrences form one term-document relationship.
 
-### `Term`：一个唯一词
+### `Term`: One Unique Term
 
-`Term` 保存小写词 `word`，`postings` 指向这个词的倒排链表。`Term` 自己也有 `next`，用于连接落到同一哈希桶中的不同词。不要把“词的链表”和“该词的文档记录链表”混为一条链表。
+A `Term` stores its lowercase `word`. Its `postings` pointer leads to that word's posting list. A `Term` also has a `next` pointer connecting different terms that fall into the same hash bucket. The chain of terms and the posting list for one term serve different purposes.
 
-可以把链表遍历理解成：先拿到起点，处理当前节点，再沿着 `next` 前进，直到指针为 `NULL`。
+To traverse a linked list, start at its first node, process the current node, and follow `next` until the pointer is `NULL`:
 
 ```c
 for (Posting *p = term->postings; p != NULL; p = p->next) {
-    /* 使用 p->docId 和 p->frequency */
+    /* Use p->docId and p->frequency here. */
 }
 ```
 
-这里的 `p->frequency` 表示“访问 p 指向的结构体里的 frequency 成员”。`index->doc_count` 同理；如果手里是结构体变量本身，则使用 `index.doc_count`。
+`p->frequency` accesses the `frequency` member of the structure pointed to by `p`. `index->doc_count` works in the same way. When you have the structure variable itself rather than a pointer, use the dot operator, as in `index.doc_count`.
 
-### `SearchIndex`：当前完整状态
+### `SearchIndex`: The Complete Current State
 
-它把文档集合、哈希桶和累计计数放在一起。任务 6 直接读取 `doc_count`、`total_terms`、`term_count`、`posting_count` 以及各文档的计数。任务 9 保存并恢复文档和倒排记录。`ready` 表示当前索引能否使用；未就绪时菜单会提示先建立或载入索引。
+`SearchIndex` holds the document collection, hash buckets, and accumulated counters. Task 6 reads `doc_count`, `total_terms`, `term_count`, `posting_count`, and the per-document counters. Task 9 saves and restores the documents and posting entries. The `ready` flag indicates whether the index is usable. If it is not ready, the menu asks you to build or load an index first.
 
-这些共享结构和索引接口是从原搜索函数中抽取、整理出来的。原来如果索引只存在于搜索函数内部，统计模块和保存模块就拿不到它，也无法在下次运行时恢复它。因此，任务 6 和 9 需要这套共享接口。
+These shared structures and interfaces were extracted from the original search function. An index available only inside that function could not be accessed by the statistics and persistence modules or restored for a later run. The shared interface allows tasks 6 and 9 to use the same index as searching.
 
-合并到小组仓库时，要一起合并全部生产源文件：`coursework.c`、`collection.c`、`index.c`、`statistics.c`、`persistence.c`，以及 `collection.h`、`search_index.h`、`statistics.h`、`persistence.h`。不能只复制 `statistics.c` 和 `persistence.c`，否则会缺少共享类型、函数实现或菜单入口。文档、构建配置和测试文件也应随对应变更一起审阅。
+When integrating the change into the group repository, include all production source files: `coursework.c`, `collection.c`, `index.c`, `statistics.c`, and `persistence.c`, together with `collection.h`, `search_index.h`, `statistics.h`, and `persistence.h`. Copying only `statistics.c` and `persistence.c` would leave out shared types, function implementations, or menu entry points. Review the related documentation, build configuration, and tests with the code.
 
-## 用两个文档算清楚统计
+## Work Out the Statistics with Two Documents
 
-假设文档内容为：
+Suppose the documents contain:
 
 ```text
-文档 0：Apple apple banana
-文档 1：apple orange
+Document 0: Apple apple banana
+Document 1: apple orange
 ```
 
-分词时只接受连续 ASCII 字母，转小写，标点和其他非字母字符起分隔作用。超过 1023 字节的完整词跳过，不拆成几个词；没有删除停用词。
+The tokenizer accepts consecutive ASCII letters, converts them to lowercase, and treats punctuation and other non-letter characters as separators. A complete word longer than 1023 bytes is skipped rather than split into several shorter words. No stopword removal is performed. In this guide, a word means a normalized searchable term.
 
-| 统计项 | 文档 0 | 文档 1 | 整个集合 |
+| Statistic | Document 0 | Document 1 | Whole collection |
 | --- | --- | --- | --- |
-| 文档数 | — | — | 2 |
-| 总词数，重复出现也计数 | 3 | 2 | 5 |
-| 唯一词数 | 2 | 2 | 3 |
+| Number of documents | N/A | N/A | 2 |
+| Total term occurrences, including repetitions | 3 | 2 | 5 |
+| Number of unique terms | 2 | 2 | 3 |
 
-集合中的唯一词为 `apple`、`banana`、`orange`。因为两个文档都含 `apple`，各文档唯一词数相加得到的 4，不能作为集合唯一词数。
+The collection's unique terms are `apple`, `banana`, and `orange`. Both documents contain `apple`, so adding their individual unique counts gives 4 rather than the correct collection-wide count of 3.
 
-倒排记录可以画成：
+The posting entries can be represented as:
 
 ```text
-apple  -> (文档 0, 次数 2) -> (文档 1, 次数 1)
-banana -> (文档 0, 次数 1)
-orange -> (文档 1, 次数 1)
+apple  -> (document 0, frequency 2) -> (document 1, frequency 1)
+banana -> (document 0, frequency 1)
+orange -> (document 1, frequency 1)
 ```
 
-所以 `term_count = 3`，`posting_count = 4`，`total_terms = 5`。关系数数的是图中的四个括号；总词数把括号中的出现次数相加：`2 + 1 + 1 + 1 = 5`。
+Therefore, `term_count = 3`, `posting_count = 4`, and `total_terms = 5`. The relationship count is the number of parenthesized entries. The total term count is the sum of their frequencies: `2 + 1 + 1 + 1 = 5`.
 
-`index_add_posting` 统一维护这些数字。重复的词和文档组合只增加出现次数；新增组合才增加关系数和该文档的唯一词数；首次遇到某个词才增加索引唯一词数。任务 6 不必重新读取文档来计算这些值。
+`index_add_posting` maintains these counters consistently. An existing term-document combination increases its frequency. A new combination increases the posting count and the document's unique term count. The first occurrence of a new term increases the index's unique term count. Task 6 can read these values without opening the documents again.
 
-## 这几个 C 概念在这里怎样用
+## How the C Concepts Are Used
 
-| 概念或函数 | 在项目中的用途 |
+| Concept or function | Purpose in this project |
 | --- | --- |
-| `struct` / `typedef` | 把一份文档或一条记录需要的信息组合起来，并取一个方便使用的类型名 |
-| `size_t` | 保存数量、长度、数组容量；这种类型的输出格式为 `%zu` |
-| `int` 和 `%d` | 文档 ID 的类型和输出格式 |
-| `unsigned` 和 `%u` | 倒排记录中词频的类型和输出格式 |
-| `malloc` / `free` | 申请和释放原文、词条、倒排节点等动态空间 |
-| `FILE *` | 标准 C 提供的文件流句柄，代表一个已经打开的文件流 |
-| `fopen(path, "wb")` | 打开输出文件；失败返回 `NULL`，成功会创建或覆盖文件 |
-| `fopen(path, "rb")` | 打开已有的索引文件进行读取 |
-| `fprintf` | 把统计值或记录头按指定格式写成文字 |
-| `fwrite` / `fread` | 按准确的字节数量写入或读取文件名、原文、词等数据块 |
-| `fclose` | 关闭文件，并完成缓冲区中剩余数据的写出；其返回值也需要检查 |
+| `struct` / `typedef` | Group the information for a document or record and give the type a convenient name |
+| `size_t` | Store counts, lengths, and array capacities; print these values with `%zu` |
+| `int` and `%d` | Store and print document IDs |
+| `unsigned` and `%u` | Store and print term frequencies in posting entries |
+| `malloc` / `free` | Allocate and release text, terms, posting nodes, and other dynamic storage |
+| `FILE *` | Refer to a file stream provided by the standard C library |
+| `fopen(path, "wb")` | Open an output file; return `NULL` on failure, otherwise create or overwrite the file |
+| `fopen(path, "rb")` | Open an existing index file for reading |
+| `fprintf` | Write statistics or record headers as formatted text |
+| `fwrite` / `fread` | Write or read the exact byte count of filenames, document text, words, and other data blocks |
+| `fclose` | Close the stream and flush buffered output; its return value must also be checked |
 
-例如 `fprintf(file, "%zu", index->total_terms)` 输出总词数。不要把 `%zu` 随意改成 `%ld`：`%ld` 对应 `long`，不保证与 `size_t` 一致。
+For example, `fprintf(file, "%zu", index->total_terms)` writes the total term count. `%zu` matches `size_t`; `%ld` matches `long`, which is not guaranteed to be the same type.
 
-索引文件的记录和整数采用文字格式，但用 `wb` / `rb` 打开，以保留准确的字节数和换行。文件打开模式中有字母 `b`，不等于实现采用了“直接把结构体内存写进去”的格式。
+Index records and integers use a textual format. The file is opened with `wb` or `rb` to preserve exact byte counts and newline bytes. Binary file mode does not mean that structure memory, including pointer addresses, is written directly to disk.
 
-## 任务 6 的调用过程
+## Calling Task 6
 
-菜单 3 的主要调用是：
+The main call for menu option 3 is:
 
 ```c
 statistics_print(index, stdout);
 ```
 
-`stdout` 是标准输出流，所以内容显示在终端。`statistics_print` 读取统计，不改变索引，也不关闭调用者传入的流。
+`stdout` is the standard output stream, so the statistics appear in the terminal. `statistics_print` reads the counters without changing the index or closing the stream supplied by its caller.
 
-菜单 6、7 使用：
+Menu options 6 and 7 use:
 
 ```c
 statistics_export(index, results, result_count, query,
                   path, csv, error, sizeof error);
 ```
 
-`csv` 为 0 输出 TXT，非 0 输出 CSV；函数返回 1 表示成功，0 表示失败，失败原因写入调用者的 `error` 数组。只导出统计时，查询参数使用 `NULL, 0, NULL`；有最近一次搜索时，菜单同时传入保存的查询字符串和结果。
+Set `csv` to 0 for text output or a nonzero value for CSV. The function returns 1 on success or 0 on failure, with a diagnostic stored in the caller's `error` array. For statistics-only output, pass `NULL, 0, NULL` in place of `results, result_count, query`. When a recent search is available, the menu also supplies its saved query string and results.
 
-菜单中的最近结果是当时选定的 Top K 结果，导出函数保留其顺序和分数。TXT 与 CSV 使用同一套计数口径。CSV 中含逗号、双引号或换行的字段需要转义；否则文件名或查询可能把一行拆成错误的列。
+The menu retains the Top K results that were displayed for that search. The export function preserves their order and scores. Text and CSV reports use the same counters. CSV fields containing commas, double quotes, or newlines must be escaped so that filenames and queries remain in the correct columns.
 
-## 任务 9 保存什么，怎样恢复
+## What Task 9 Saves and How It Restores the Index
 
-菜单 8 调用 `index_save(index, path, error, sizeof error)`。保存文件包括：
+Menu option 8 calls `index_save(index, path, error, sizeof error)`. The saved file contains:
 
-1. 文件标识和格式版本。
-2. 集合的四个计数。
-3. 各文档的 ID、名称、原文及统计。
-4. 每个词和它的全部“文档 ID—出现次数”记录。
-5. 结束标识。
+1. A file identifier and format version.
+2. The four collection/index counters.
+3. Each document's ID, filename, original text, and statistics.
+4. Each term and all of its document-ID/frequency posting entries.
+5. An end marker.
 
-名称和原文前面记录字节长度，所以原文中有空格或换行也能准确读取。格式详情见 [index-format.md](index-format.md)。实际默认扩展名是 `.idx`；扩展名不影响上述格式。
+Byte lengths are recorded before filenames and document text. This allows spaces and newlines in the data to be read accurately. See [index-format.md](index-format.md) for the full specification. The default extension is `.idx`; the extension does not change the file format.
 
-内存指针只表示本次程序运行中某块空间的地址。程序退出后，那块空间不再属于这个进程；下次运行的节点地址也可能不同。因此，保存的是词、文档编号、次数等实际数据，载入时重新申请节点，再把 `next` 指针连接起来。哈希桶位置按词重新计算，查询使用的运行时标记从初始状态开始。
+A memory pointer identifies an address within the current program run. After the process exits, that allocation is no longer part of the process, and a later run may allocate nodes at different addresses. The file therefore stores actual words, document IDs, frequencies, and text. Loading allocates new nodes and connects their `next` pointers. Hash bucket locations are recalculated from the terms, and runtime query markers are reset.
 
-菜单 9 调用 `index_load(index, path, error, sizeof error)`。它先创建临时索引，按文件记录恢复原文和节点，通过 `index_add_posting` 恢复倒排关系并累计统计，再核对计数及文件结尾。全部成功后才替换当前索引；失败则释放临时数据，保留当前索引。
+Menu option 9 calls `index_load(index, path, error, sizeof error)`. It first creates a temporary index, restores the document text and nodes from the records, and uses `index_add_posting` to restore the posting relationships and counters. It then verifies the counters and the end of the file. Only a fully successful load replaces the current index. A failed load releases the temporary data and preserves the current index.
 
-`index_build` 的工作是扫描原文并分词。`index_load` 已经从保存文件中读到词和对应记录，所以只需恢复节点，不调用 `index_build`，也不打开原文档文件。本格式同时保存原文，因此载入后菜单 5 仍能查看文档。
+`index_build` scans and tokenizes document text. `index_load` already has the saved terms and posting entries, so it restores their nodes without calling `index_build` or opening the original document files. Because the format also saves the original text, menu option 5 can still display a document after loading.
 
-## 内存由谁管理
+## Who Owns the Memory?
 
-“ownership”可以理解成：谁最终负责释放一块申请出来的空间。
+Memory ownership means responsibility for eventually releasing an allocation.
 
-| 对象或操作 | 谁负责申请和释放 |
+| Object or operation | Allocation and release responsibilities |
 | --- | --- |
-| `SearchIndex` 对象本身 | `main` 申请；退出时先 `index_free(index)`，再 `free(index)` |
-| 文档原文、词条、倒排节点 | 集合或索引模块申请；归当前 `SearchIndex` 管理，`index_free` 统一释放 |
-| 最近搜索结果数组 | `main` 单独申请，退出时单独释放 |
-| 统计打印和导出 | 借用索引、结果和查询，不取得这些内存的所有权；导出自己打开并关闭输出文件 |
-| 保存索引 | 借用当前索引，不释放或修改它；自己打开并关闭保存文件 |
-| 载入成功 | 临时索引把原文和节点移交给目标索引；释放的是临时外壳，不能再把已移交的节点释放掉 |
-| 载入失败 | 释放临时索引中的原文和节点，目标索引继续拥有原来的数据 |
+| The `SearchIndex` object itself | `main` allocates it; on exit, call `index_free(index)` and then `free(index)` |
+| Document text, terms, and posting nodes | The collection or index module allocates them; the current `SearchIndex` owns them, and `index_free` releases them |
+| The most recent search-result array | `main` allocates it separately and frees it separately on exit |
+| Printing or exporting statistics | Borrows the index, results, and query without taking ownership; the export function opens and closes its own output file |
+| Saving the index | Borrows the current index without modifying or freeing it; opens and closes its own file |
+| A successful index load | Transfers document text and nodes from the temporary index to the destination; frees only the temporary outer object, not the transferred data |
+| A failed index load | Releases the temporary text and nodes; the destination continues to own its original data |
 
-`index_free` 释放对象内部的内容并重置状态，不负责 `free` 调用者申请的 `SearchIndex` 外壳。这就是退出代码要有上述两步的原因。
+`index_free` releases the object's internal allocations and resets its state. It does not free the outer `SearchIndex` object allocated by the caller. That is why shutdown requires both `index_free(index)` and `free(index)`.
 
-`index_load` 的目标必须先由 `index_init` 初始化。初始化后，空指针才能被安全判断和释放。重新载入或重建成功后，菜单会清除旧的最近搜索结果，避免把旧文档 ID 对应的结果用于新索引。
+The destination passed to `index_load` must first be initialized with `index_init`, so its pointers can be checked and released safely. After a successful reload or rebuild, the menu clears the previous search results to prevent old document IDs from being interpreted against a different index.
 
-## 文档输入与标准 C
+## Document Input and Standard C
 
-项目保留了原来的 `dirent` 文件夹读取方式，作为可选的平台适配器。只有启用 `ENABLE_DIRECTORY_INPUT`，且编译环境提供相应头文件和接口时，才编译这部分。
+The original `dirent` folder-reading interface is retained as an optional platform adapter. It is compiled only when `ENABLE_DIRECTORY_INPUT` is enabled and the build environment provides the required header and interfaces.
 
-不启用时可以使用标准 C 的文档清单输入：一个普通文本文件，每行写一份文档的路径。相对路径相对于清单文件所在目录解析；空行和以 `#` 开头的行跳过。清单只配置哪些文档被载入，不是已经保存好的索引。
+Without that option, use standard-C collection-list input: a plain text file containing one document path per line. Relative paths are resolved against the list file's directory. Blank lines and lines beginning with `#` are skipped. The list configures which documents are loaded; it is not a previously saved index.
 
-这样可以先用清单完成任务 6 和 9 的演示，不必为了读取目录额外安装非标准接口。若小组使用文件夹模式，具体编译方式按 README 选择。
+Collection-list input lets you demonstrate tasks 6 and 9 without installing an additional directory-reading interface. If the group uses folder input, select the corresponding build command in the README.
 
-## 自己动手演示
+## Demonstrate the Features Yourself
 
-以下是可以实际操作的演示流程，不表示你已经完成了这些操作。
+The following steps are a demonstration you can perform, not a record of actions you have already completed.
 
-1. 在项目根目录新建 `demo` 文件夹，在里面建立 `doc0.txt` 和 `doc1.txt`，分别写入 `Apple apple banana` 与 `apple orange`。
-2. 在 `demo/collection.txt` 中写入两行：`doc0.txt`、`doc1.txt`。按 README 编译后，从项目根目录启动程序。
-3. 选择菜单 1，输入 `demo/collection.txt`。成功后选择菜单 3，应能核对 2 份文档、5 次词出现、3 个唯一词和 4 条关系。
-4. 选择菜单 4，查询 `apple`，Top K 输入 2。文档 0 分数应为 2，文档 1 分数应为 1；输入 `/exit` 返回主菜单。
-5. 选择菜单 6、7，文件路径直接回车采用默认值。打开项目根目录的 `report.txt`、`report.csv`，检查统计和刚才的结果。CSV 可以用文本编辑器或 CSV 工具查看。
-6. 选择菜单 8，回车把当前索引保存为项目根目录的 `index.idx`，再选择菜单 0 退出整个程序。
-7. 在程序退出后，暂时把 `demo` 文件夹改名为 `demo-hidden`，保留项目根目录的 `index.idx`。重新启动程序，直接选择菜单 9，回车载入 `index.idx`；这一步不选择菜单 1 或 2。
-8. 再看菜单 3，重复 `apple` 查询，并用菜单 5 查看文档 0。统计、搜索和原文仍应可用，这说明恢复的数据足以支持这些功能，不依赖原输入文件仍在原路径。
-9. 演示结束后把文件夹名称恢复。若要再次导出搜索结果，先执行新查询；载入索引会清除上一个进程或旧索引的最近搜索状态。
+1. Create a `demo` folder in the project root. Create `doc0.txt` and `doc1.txt` inside it, containing `Apple apple banana` and `apple orange`, respectively.
+2. Create `demo/collection.txt` with two lines: `doc0.txt` and `doc1.txt`. Compile according to the README and start the program from the project root.
+3. Select menu option 1 and enter `demo/collection.txt`. After a successful load, select option 3. Check for 2 documents, 5 term occurrences, 3 unique terms, and 4 posting relationships.
+4. Select option 4, search for `apple`, and enter 2 for Top K. Document 0 should have score 2, and document 1 should have score 1. Enter `/exit` to return to the main menu.
+5. Select options 6 and 7. Press Enter at each output-path prompt to use the defaults. Open `report.txt` and `report.csv` in the project root and check the statistics and results. You can inspect CSV with a text editor or a CSV reader.
+6. Select option 8 and press Enter to save the current index as `index.idx` in the project root. Then select option 0 to exit the entire program.
+7. After the program exits, temporarily rename the test-created `demo` folder to `demo-hidden`, leaving `index.idx` in the project root. Restart the program, go directly to option 9, and press Enter to load `index.idx`. Do not choose option 1 or 2 during this reload demonstration.
+8. Check option 3 again, repeat the `apple` search, and use option 5 to display document 0. The statistics, search results, and original text should remain available. This demonstrates that the saved data supports these operations even when the original input paths are unavailable.
+9. Restore the folder's name after the demonstration. To export search results again, first run a new query: loading an index clears the previous process's or previous index's recent search state.
 
-也可以另外演示失败处理：载入不存在的文件，或载入单独准备的不完整索引副本，观察错误提示和当前有效索引是否仍可查询。保留正常保存文件，不必修改它。
+You can also demonstrate failure handling by loading a nonexistent file or a separately prepared incomplete copy of an index file. Check the error message and confirm that the current valid index can still be searched. Keep the correctly saved index intact.
 
-## 3—5 分钟个人说明视频提纲
+## Outline for a 3-5 Minute Individual Explanation Video
 
-下面是可按你实际理解和操作改写的讲稿提纲。录制时说清你负责的模块和实际展示的现象；没有做过的操作不要描述成个人经历，也不要把准备讲稿说成已经录制或提交。
+Adapt this outline to your own understanding and the actions you actually demonstrate. Identify your modules and explain the observed behavior. Do not describe an unperformed operation as personal experience or claim that preparing an outline means the video or complete coursework has already been recorded or submitted.
 
-| 时间建议 | 展示内容 | 可以说明的要点 |
+| Suggested time | What to show | Points to explain |
 | --- | --- | --- |
-| 0:00—0:30 | 菜单和文件列表 | “我负责的是任务 6 的统计与报告，以及任务 9 的索引保存和载入。菜单 3、6、7 对应统计，8、9 对应持久化。” |
-| 0:30—1:15 | 两份样例文档、统计界面 | 用 `apple` 例子解释总词数 5、唯一词数 3、关系数 4；指出集合唯一词数不能相加得到 |
-| 1:15—2:00 | 一次搜索和 TXT／CSV 报告 | 展示查询、导出结果；说明 CSV 对文件名或查询中的逗号、引号、换行进行了处理 |
-| 2:00—3:00 | 保存、退出、重新启动并载入 | 明确展示退出进程；原输入目录改名后直接载入索引，再查询和查看文档，不执行重新建立索引 |
-| 3:00—4:00 | 两个模块的关键函数 | 说明统计读取共享计数；保存实际记录；载入通过临时索引恢复，失败保留旧索引；指针地址不能跨进程保存 |
-| 4:00—4:30 | 简单错误场景和结束说明 | 根据实际操作说明打不开文件等错误如何提示，以及文件和内存怎样关闭、释放 |
+| 0:00-0:30 | Menu and file list | "My assigned areas are statistics and reporting in task 6, and saving and loading the index in task 9. Options 3, 6, and 7 cover reporting; options 8 and 9 cover persistence." |
+| 0:30-1:15 | Two sample documents and the statistics screen | Use the `apple` example to explain 5 total occurrences, 3 unique terms, and 4 relationships; explain why per-document unique counts cannot simply be added |
+| 1:15-2:00 | One search and the text/CSV reports | Show the query and exported results; explain how CSV handles commas, quotes, and newlines in filenames or queries |
+| 2:00-3:00 | Saving, exiting, restarting, and loading | Show the process exit clearly; rename the test input folder, load the index directly, then search and display a document without rebuilding |
+| 3:00-4:00 | Key functions in the two modules | Explain shared counters, saving actual records, temporary-index loading, preservation of the old index on failure, and why pointer addresses cannot be reused across runs |
+| 4:00-4:30 | A simple error case and closing explanation | Based on the actual demonstration, explain a file-open failure and how files and memory are closed or released |
 
-不必在几分钟内解释所有辅助函数。优先让观看者看懂“读什么数据、得到什么结果、退出后怎样恢复，以及失败时怎样处理”，再用少量代码支持这些解释。
+You do not need to explain every helper function within a few minutes. Prioritize the input data, the resulting output, restoration after process exit, and failure handling. Use a small amount of code to support those explanations.

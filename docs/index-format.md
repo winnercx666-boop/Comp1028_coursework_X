@@ -1,6 +1,6 @@
-# 任务 9：索引保存与重新加载
+# Task 9: Saving and Reloading the Index
 
-`persistence.c` 提供两个函数，使用标准 C 的 `fopen`、`fprintf`、`fwrite`、`fgets`、`fread`、`fgetc` 和 `fclose`。
+`persistence.c` provides two functions implemented with standard C file operations: `fopen`, `fprintf`, `fwrite`, `fgets`, `fread`, `fgetc` and `fclose`.
 
 ```c
 int index_save(const SearchIndex *index, const char *path,
@@ -9,39 +9,45 @@ int index_load(SearchIndex *destination, const char *path,
                char *error, size_t error_size);
 ```
 
-返回 `1` 表示成功，返回 `0` 表示失败。调用方可以把 `error` 中的说明显示给用户。`destination` 必须先通过 `index_init` 初始化，之后才能传给 `index_load`。
+Both functions return `1` on success and `0` on failure. When an error buffer is supplied, the caller can display its diagnostic message. Before calling `index_load`, initialize `destination` with `index_init`.
 
-## 为什么需要保存这些数据
+## Purpose and Stored Data
 
-索引是“词 -> 文档编号和出现次数”的映射。保存后，程序下次运行可以直接恢复这些关系，立即进行搜索，避免再对所有文档分词、建立索引。
+The inverted index maps each term to document IDs and term frequencies. Saving these relationships allows the next program session to restore the index and search immediately, without tokenizing every document and constructing the index again.
 
-本格式同时保存文档名称、原文和文档统计。因此，原始输入文件被移动或暂时不可用时，加载后的程序仍能搜索、查看文档和导出统计。文件中保存的是实际字符串、编号和次数；链表的 `next` 指针、内存地址、哈希桶位置和 `lastQuery` 等本次运行状态不保存。重新加载时重新分配节点，并根据词重新计算哈希位置。
+The format also stores document names, original document content and document statistics. After loading, the program can therefore search, preview documents and export statistics even when the original input files have been moved or are unavailable.
 
-## 文件格式：版本 1
+The file contains actual strings, document IDs and frequencies. It does not contain linked-list `next` pointers, memory addresses, hash-bucket locations or session state such as `lastQuery`. Loading allocates new nodes and calculates each term's hash-bucket location again.
 
-菜单默认文件名为 `index.idx`，也可自行指定 `index.txt` 等名称。这是一个带长度信息的文本格式；记录和整数是可读文字，文件名和原文按原始字节保存。程序使用 `wb` / `rb` 模式，确保 Windows 不会自动把换行符转换，从而使长度与实际数据不一致。
+## File Format: Version 1
 
-所有记录行使用单个 ASCII 空格分隔字段，以一个 LF 字节（`\n`）结束。整数使用没有正负号的十进制表示。示例中的 `<...>` 表示相应的值，不包含尖括号。
+The menu's default filename is `index.idx`; callers may choose another name, such as `index.txt`. This is a text format with explicit byte lengths. Record fields and integers are readable text, while filenames and document content are stored as their original bytes.
 
-| 部分 | 准确格式 |
+Files are opened in `wb` and `rb` mode. This prevents automatic newline conversion on Windows, which would otherwise change the number of bytes in the data blocks.
+
+Each record line uses one ASCII space between fields and ends with one LF byte (`\n`). Integers are unsigned decimal values without a leading sign. In the table below, `<...>` denotes a field value; the angle brackets are not written to the file.
+
+| Part | Exact format |
 |---|---|
-| 文件标识及版本 | `COMP1028_INDEX 1\n` |
-| 集合计数 | `COUNTS <文档数> <总词数> <唯一词数> <关系数>\n` |
-| 每个文档的描述 | `D <文档ID> <文件名字节数> <原文字节数> <文档总词数> <文档唯一词数>\n` |
-| 文件名数据块 | 指定字节数的文件名，随后一个 `\n` |
-| 原文数据块 | 指定字节数的原文，随后一个 `\n` |
-| 每个词的描述 | `T <词的字节数> <该词的关系数>\n` |
-| 词数据块 | 指定字节数的小写 ASCII 词，随后一个 `\n` |
-| 每条倒排关系 | `P <文档ID> <出现次数>\n` |
-| 文件结尾 | `END\n`，随后必须到达文件结束 |
+| Format identifier and version | `COMP1028_INDEX 1\n` |
+| Collection counters | `COUNTS <document_count> <total_terms> <unique_terms> <posting_count>\n` |
+| Document descriptor | `D <document_id> <filename_bytes> <content_bytes> <document_total_terms> <document_unique_terms>\n` |
+| Filename block | Exactly `filename_bytes` bytes, followed by one `\n` |
+| Document content block | Exactly `content_bytes` bytes, followed by one `\n` |
+| Term descriptor | `T <term_bytes> <term_posting_count>\n` |
+| Term block | Exactly `term_bytes` bytes of a lowercase ASCII term, followed by one `\n` |
+| Posting relationship | `P <document_id> <frequency>\n` |
+| End marker | `END\n`, followed immediately by end of file |
 
-文档按 ID 从 `0` 到 `文档数 - 1` 顺序保存。程序随后写入每个词及其全部倒排记录。词的保存顺序由哈希桶遍历决定，不要求按字母顺序排列。加载时必须保留每条记录中的原文档 ID，不能自行按文件名重新编号。
+Document records appear in ID order, from `0` to `document_count - 1`. They are followed by the term records and each term's complete posting list. Terms are written in hash-bucket traversal order and need not be alphabetically sorted. Loading preserves the stored document IDs rather than assigning new IDs based on filenames.
 
-“字节数”通过 C 的 `strlen` 计算，不是汉字等字符的数量。例如 UTF-8 文件名可能每个汉字占多个字节。长度数据块允许文件名含空格、逗号、引号和换行，也允许原文包含多行；不能包含内嵌的 `\0`，因为程序使用 C 字符串存储它们。数据块自身的换行属于数据，其后另加一个用于分隔记录的 LF 字节。
+A posting represents one distinct term-document relationship. Multiple occurrences of that term in the same document increase the posting's frequency; they do not create additional relationships.
 
-### 可被加载的完整例子
+Byte lengths are calculated with C's `strlen`, rather than by counting displayed characters. A non-ASCII character in a UTF-8 filename may occupy several bytes. Length-prefixed blocks allow filenames to contain spaces, commas, quotation marks and newlines, and allow document content to span multiple lines. Embedded `\0` bytes are rejected because the program stores these blocks as C strings. Newlines belonging to a data block count toward its length; a separate LF byte terminates the block afterward.
 
-两份文档分别为 `Apple apple banana` 与 `apple orange`。转小写后共有 5 次词出现、3 个唯一词、4 条词与文档的关系：
+### Complete Loadable Example
+
+The documents contain `Apple apple banana` and `apple orange`. After case normalization, they contain five term occurrences, three unique terms and four distinct term-document relationships:
 
 ```text
 COMP1028_INDEX 1
@@ -65,7 +71,7 @@ P 1 1
 END
 ```
 
-文件必须在 `END` 后保留其换行，之后不能附加其他数据。以下内容则表示一个已经建立好的空索引：
+The file must retain the newline after `END`, with no additional data after it. An initialized and built empty index is represented by:
 
 ```text
 COMP1028_INDEX 1
@@ -73,57 +79,60 @@ COUNTS 0 0 0 0
 END
 ```
 
-## 加载过程和检查
+## Loading and Validation
 
-1. 打开文件并核对标识、版本和头部计数。
-2. 在一个临时 `SearchIndex` 中恢复文档名称和原文。
-3. 逐词、逐关系调用 `index_add_posting` 恢复索引，同时由该函数重新计算集合和文档的统计值。这里没有调用 `index_build`，也不读取原文档文件。
-4. 对比重新计算的计数与文件声明的计数，并检查 `END` 和文件结束。
-5. 只有所有步骤和关闭文件都成功后，才释放调用方旧索引，把临时索引移交给调用方。
+1. Open the file and check its format identifier, version and header counters.
+2. Restore document names and content into a temporary `SearchIndex`.
+3. Restore each term and posting through `index_add_posting`. That function recalculates the collection and document counters as it inserts the relationships. Loading does not call `index_build` or open the original document files.
+4. Compare the reconstructed counters with the stored counters, then check `END` and end of file.
+5. Only after every step, including closing the file, succeeds, release the caller's previous index and transfer ownership of the temporary index to the caller.
 
-加载失败时释放临时文档和节点，原来的索引保持可用。程序检查：
+On failure, temporary documents and nodes are released, and the previous destination index remains usable. Validation covers:
 
-- 不支持的版本、错误记录标识、字段缺失、额外字段、负号、数字溢出和过长记录行。
-- 文档数量超过 6000；空文件名或文件名字节数超过 299；原文字节数超过 199999。
-- 空词、词长度超过 1023、词中含非小写 ASCII 字母。
-- 文档 ID 超出范围、不连续的文档记录编号、同一词的重复文档关系、重复词记录。
-- 出现次数为 0 或大于 `UINT_MAX`；没有关系的词；声明的计数与实际记录不一致。
-- 文件截断、字节长度不符、内嵌 `\0`、缺少结束标识或结尾有垃圾数据。
-- 文件打开、读取、关闭以及内存申请失败。
+- Unsupported versions, incorrect record labels, missing or extra fields, signed numbers, integer overflow and excessively long record lines.
+- More than 6000 documents; empty filenames or filenames longer than 299 bytes; content longer than 199999 bytes per document.
+- Empty terms, terms longer than 1023 bytes and term characters outside lowercase ASCII letters.
+- Out-of-range document IDs, document descriptors that are not in consecutive ID order, duplicate term records and duplicate document IDs within a term's posting list.
+- Frequencies equal to zero or greater than `UINT_MAX`; terms without postings; counters that disagree with the stored records.
+- Truncated files, incorrect byte lengths, embedded `\0`, missing end markers and extra data after the end marker.
+- File-opening, reading, closing and memory-allocation failures.
 
-文档总词数还必须不大于其原文字节数，文档唯一词数不大于总词数。加载器进行结构和计数验证，不为验证内容重新分词；这使重新加载继续符合“不重新建立索引”的要求。
+A document's total term count must not exceed its content length in bytes, and its unique term count must not exceed its total term count. Each posting is also checked against the remaining declared term count and unique-term allowance for its document before insertion.
 
-## 保存行为
+The loader validates the file's structure and counters without tokenizing its content again. It therefore preserves the intended ability to reload an index without rebuilding it.
 
-保存前核对内存中的文档和倒排列表，确保统计计数一致、词和文档编号有效。随后打开指定输出文件，逐项写入，并检查写入和关闭是否成功。
+## Saving Behavior
 
-`wb` 会覆盖已有的同名文件。若写入期间发生磁盘或文件系统错误，函数返回失败，输出文件可能只写入了一部分；这种文件会被加载检查拒绝。因此，不应把保存失败当成一次成功备份。
+A save request requires a built index. Before opening the output file, the implementation checks the in-memory documents and posting lists to confirm that counters agree and that terms and document IDs are valid. It then writes every record and checks both write operations and file closure.
 
-## 接入示例
+Opening in `wb` mode replaces an existing file at the specified path. If a disk or file-system error interrupts writing, the function returns failure and the output may contain only part of the index. Such an incomplete file is rejected by the loader. A failed save must not be treated as a successful backup.
+
+## Integration Example
 
 ```c
 char error[256];
 
-if (!index_save(active_index, "index.txt", error, sizeof error))
+if (!index_save(active_index, "index.idx", error, sizeof error))
     printf("Save failed: %s\n", error);
 
-/* active_index 已经由 index_init 初始化；已有数据也可以被成功加载替换。 */
-if (!index_load(active_index, "index.txt", error, sizeof error))
+/* active_index was initialized with index_init. A successful load may
+   replace an index that already contains data. */
+if (!index_load(active_index, "index.idx", error, sizeof error))
     printf("Load failed: %s\n", error);
 ```
 
-## 时间与内存
+## Time and Memory Considerations
 
-保存需要遍历文档、哈希桶、词和倒排关系，并写出名称与原文。加载需要读入相同的数据，并调用索引插入接口恢复节点。通常代价主要随文件内容、词数和关系数增加；具体最坏时间还取决于哈希冲突及倒排链表查找，不能直接把它宣称为严格线性。
+Saving traverses the documents, hash buckets, terms and posting relationships, and writes filenames and original content. Loading reads the same data and restores nodes through the index insertion interface. Its cost generally grows with the amount of content, the number of terms and the number of postings. Hash collisions and posting-list searches also affect the worst-case running time, so the implementation should not be described as strictly linear without qualification.
 
-加载采用“临时恢复成功后替换”的方式，期间会同时保留旧索引和新索引。它使用额外内存换取失败时旧索引不会丢失。统计字段通过倒排记录恢复，重复查询的运行时标记从零开始。
+During loading, the old index and the temporary new index coexist. This uses additional memory to ensure that a failed load cannot destroy the old index. Statistical counters are reconstructed from the postings, while repeated-query session markers start at zero.
 
-## 演示时可以解释的 C 概念
+## C Concepts to Explain in a Demonstration
 
-- `FILE *` 表示打开的文件，`fopen` 返回 `NULL` 时需要处理失败。
-- `fprintf` 写记录行，`fwrite` / `fread` 按准确字节数写入或读取字符串数据块。
-- `malloc` 申请原文和节点的空间，失败分支以及最后退出时通过 `index_free` 释放。
-- 指针保存的是本次运行中的地址，不能当作下次运行可用的链表内容。
-- `size_t` 类型的长度和计数使用 `%zu`；词频的 `unsigned` 使用 `%u`。
+- `FILE *` represents an open file; a `NULL` result from `fopen` must be handled.
+- `fprintf` writes record lines, while `fwrite` and `fread` transfer the exact number of bytes specified for each string block.
+- `malloc` allocates document content and nodes. Failure paths and final cleanup release owned memory through `index_free`.
+- A pointer stores an address in the current process and cannot serve as the persisted contents of a linked list.
+- Lengths and counters of type `size_t` use `%zu`; term frequencies of type `unsigned` use `%u`.
 
-测试结果由实际验证记录提供；本文件说明格式与实现，不把尚未运行的用例写成已通过的测试。
+Actual test results belong in the verification records. This document describes the file format and implementation; it does not present unexecuted test cases as successful tests.

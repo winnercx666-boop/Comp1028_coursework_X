@@ -1,34 +1,33 @@
-# 任务 6 和 9 验证记录
+# Feature 6 and Feature 9: Validation Record
 
-本记录对应本地实现，在 2026-11-20 实际执行，不代表课程最终基准测试或整个小组作业已提交。
+These checks were actually performed on 20 November 2026. They establish the implemented features' behavior; they do not represent the prescribed final coursework benchmark or submission of the complete group assignment. The subsequent English-language revision changes documentation rather than the tested C algorithms.
 
-## 编译
+## Compilation
 
-使用现有 GCC 工具链，两种主程序均通过以下检查，0 错误、0 警告：
+Both application variants compiled with zero errors and zero warnings using the existing GCC toolchain and:
 
 ```text
 -std=c17 -O2 -Wall -Wextra -Wpedantic -Werror
 ```
 
-- `build/coursework.exe`：启用原文件夹扫描适配器，同时支持配置清单。
-- `build/coursework_standard.exe`：不启用 `dirent.h`，所有编译的代码仅使用标准 C 库，采用配置清单。
+- `build/coursework.exe`: enables the original folder adapter and also supports collection-list input.
+- `build/coursework_standard.exe`: excludes `dirent.h`; the compiled program uses only standard C library interfaces and configured collection-list input.
 
-## 模块契约测试
+## Module contract tests
 
-文件：`tests/test_features.c`。最新运行输出：`1012 checks, 0 failures`。
-1012 包含断言、必要的文件 I/O 和分配检查，不是 1012 个独立场景。
+Source: `tests/test_features.c`. The latest actual run reported `1012 checks, 0 failures`. This count includes assertions and required allocation/file-I/O checks; it is not a count of 1012 independent scenarios.
 
-实际覆盖：
+Coverage included:
 
-- 3 篇文档（其中 1 篇为空）、5 次词出现、3 个不同词、4 条倒排关系的独立预期值。
-- 单篇文档统计、大小写及标点规则、重复查询词、同分文档排序。
-- TXT/CSV 统计、CSV 引号/逗号/多行查询和 UTF-8 文件名。
-- 独立手写索引格式的加载、保存后加载、文档编号和原文恢复。
-- 空索引、重复加载与清理。
-- 21 类损坏索引变体（含无效格式/版本、溢出、超限、重复记录、错误编号/频次和计数不一致），
-  以及缺失文件、空文件、截断和 NUL。加载失败后原索引仍可查询。
+- Independent expected values for three documents, including an empty document: 5 occurrences, 3 unique terms and 4 posting relationships.
+- Per-document counters, case normalization, punctuation, duplicate query terms and deterministic tie ordering.
+- TXT/CSV statistics, quoted fields, commas, multiline queries and UTF-8 filenames.
+- A hand-written valid index as an independent loading oracle, save/load round trips, document IDs and original text.
+- Empty indexes, repeated loading and cleanup.
+- 21 malformed-index variants, including invalid format/version, numeric overflow, limits, duplicates, invalid IDs/frequencies and inconsistent counters.
+- Missing files, empty files, truncation and embedded NUL. An unsuccessful load preserved the existing index and its search behavior.
 
-复现（先建立测试输出目录）：
+Reproduce from the project root:
 
 ```powershell
 New-Item -ItemType Directory -Path tests/run -Force
@@ -36,25 +35,33 @@ gcc -std=c17 -Wall -Wextra -Wpedantic -Werror tests/test_features.c index.c stat
 .\tests\run\test-features.exe
 ```
 
-## 菜单和进程测试
+## Menu and process tests
 
-文件：`tests/test_cli.py`，28 项进程/结果检查全部通过。Python 只用于验证工具，C 程序不调用它。
+Source: `tests/test_cli.py`. All 28 process/result checks passed. Python is a verification tool; the application does not call it.
 
-- 文件夹加载和空文档；非法菜单和未建索引操作；标点空查询。
-- 搜索并导出报告，使用 Python 标准 CSV 读取器核对实际列和计数。
-- 保存、退出进程，将测试原文目录改名，使原输入路径不可用，再启动全新进程加载索引。
-- 加载后查询、原文预览和统计都一致，不经过文档加载和重建索引菜单。
-- 纯标准 C 配置清单模式与文件夹模式统计一致。
-- 截断索引读入失败后，原有索引仍能正确查询。
-- 50 篇合成文档，共 100000 次词出现，4 个不同词、200 条倒排关系，计数与预期一致。
-- 对这份规模数据保存并在新进程恢复后，查询仍返回每篇 `apple` 词频 500，按文档 ID 排序。
+The driver checked:
 
-本次测到两个完整进程的墙钟时间约 0.339 秒（加载、建索引、报告、保存）和 0.013 秒（加载索引、查询）。
-这包含进程启动和输出，操作集合也不同，不能用它们宣称索引查询比线性扫描快。
-它们仅是本机合成规模检查记录；没有测量课程要求的检索质量指标或最终 benchmark。
+- Folder loading, empty documents, invalid menu input, operations before an index is ready and punctuation-only queries.
+- Search and report export, using Python's standard CSV reader to verify actual fields and counters.
+- Saving, terminating the process, renaming the test corpus so its original path was unavailable, and loading in a new process.
+- Restored search, document preview and identical statistics without running the collection-loading or index-rebuilding options.
+- Identical statistics from the standard-C list input and folder input modes.
+- Continued use of the old index after loading a truncated file failed.
+- A synthetic collection of 50 documents, 100000 occurrences, 4 unique terms and 200 posting relationships.
+- Saving and restoring that collection in a new process, then returning `apple` frequency 500 for every document with ties ordered by document ID.
 
-原始输出与 `summary.json` 保存在 `build/e2e-s89j2rnd/`；模块输出保存在 `tests/run/`。
-这些目录被 Git 忽略，保留用于核查。交付包另附精简证据。
+Measured whole-process wall times were approximately 0.339 seconds for loading/building/reporting/saving and 0.013 seconds for loading/searching. These include startup and output, and the operation sets differ. They do not establish indexed-query latency or a speedup over linear scanning. No prescribed retrieval-quality metrics or final benchmark were measured in these smoke tests.
 
-复现：先按 README 编译两个主程序，再运行 `python tests/test_cli.py`。
-脚本会在 `build/` 下创建新的测试目录，不覆盖个人数据。
+Raw menu output and `summary.json` remain in the local ignored directory `build/e2e-s89j2rnd/`; module outputs are in `tests/run/`. The source-and-run package includes a concise evidence subset. New test runs create their own directories under `build/`.
+
+To reproduce, first compile both application variants using the README commands, then run:
+
+```powershell
+python tests/test_cli.py
+```
+
+## Verification after GitHub upload
+
+After the original implementation was uploaded, its branch was fetched again. All 26 repository files matched the local version after normalizing line endings. The freshly fetched source passed strict C17 compilation, sample statistics/save behavior, and loading in a new process. The initial uploaded revision checked was `e411bb73993f5a4de7a627920d10488c0eae67bc`.
+
+This records actual checks. The group must separately collect evidence for the prescribed datasets, full-system evaluation, reports and presentation deliverables.
