@@ -1,0 +1,9 @@
+*.exe
+*.o
+build/
+tests/tmp/
+tests/run/*
+!tests/run/.gitkeep
+report.txt
+report.csv
+index.idx
