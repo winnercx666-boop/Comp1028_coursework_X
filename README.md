@@ -95,7 +95,6 @@ The collection limit is 6000 documents, with at most 199999 bytes per document a
 - [Feature 9 index file format](docs/index-format.md)
 - [Code-reading and demonstration guide](docs/task6-task9-guide.md)
 - [Recorded validation and reproduction commands](docs/validation.md)
-- [AI-assistance record draft](docs/ai-usage.md)
 
 The functional and synthetic-scale checks are recorded in the validation document. The sample corpus is for demonstration. The group still needs to evaluate the full system on the coursework-prescribed 20 Newsgroups/Cranfield data and the final released benchmark, and complete the remaining group deliverables.
 
