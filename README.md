@@ -30,16 +30,19 @@ In this mode, select menu option `1` and enter `examples/collection.txt`. Each n
 
 If GNU Make is available, use `make`, or `make CPPFLAGS=` for collection-list input without the folder adapter. The Makefile creates `coursework.exe` in the project root; `run.cmd` also supports that location.
 
-## Independent Task 6 and Task 9 files
+## Single-file statistics and persistent index program
 
-The independently runnable task sources are available directly in the repository root:
+[statistics_index.c](statistics_index.c) combines Task 6 statistics/TXT/CSV reporting and Task 9 index saving/loading in one independently runnable C source. Document input, indexing, search and preview share one index and one menu. No project-specific header files are required.
 
-| Source | Purpose |
-|---|---|
-| [statistics_standalone.c](statistics_standalone.c) | Task 6: statistics and TXT/CSV reports |
-| [save_load_index.c](save_load_index.c) | Task 9: index saving/loading and validation |
+Build and run this source on its own from the repository root:
 
-Build each standalone source as its own program. The integrated group application uses the five explicit production sources in the build commands above. See the [standalone task guide](docs/standalone-tasks.md) for compilation, sample input and menu instructions.
+```powershell
+New-Item -ItemType Directory -Path build -Force | Out-Null
+gcc -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_index.c -o build/statistics_index.exe
+.\build\statistics_index.exe
+```
+
+Select `1` and enter `examples/collection.txt` in this standard-C build. The [single-file guide](docs/standalone-tasks.md) covers the menu, folder-input build and save/restart/load demonstration. The integrated group application uses the five explicit production sources in the build commands above.
 
 ## Quick demonstration
 
@@ -77,7 +80,7 @@ Relative output paths use the program's working directory. Paths may contain spa
 | `collection.c` / `collection.h` | Standard-C collection-list input and the optional original folder adapter |
 | `coursework.c` | Menu integration, document preview and recent-query state |
 
-The original function-local index is exposed through `SearchIndex` so search, reporting and persistence can reuse the same posting lists. Compile the five integrated application sources listed in the build commands above; their project headers remain required. The standalone `statistics_standalone.c` and `save_load_index.c` files are each compiled as a separate program.
+The original function-local index is exposed through `SearchIndex` so search, reporting and persistence can reuse the same posting lists. Compile the five integrated application sources listed in the build commands above; their project headers remain required. The standalone `statistics_index.c` contains both features and is compiled as a separate program.
 
 ## Statistics and ranking definitions
 
