@@ -1,15 +1,19 @@
 /*
- * COMP1028 Task 9: Save and Reload an Inverted Index
- * Standalone C17 source; no project-specific header files are required.
+ * Document Statistics and Index Persistence
+ * Standalone C17 source with one shared index and one console menu.
+ * Compile this file alone; no project-specific headers or sources are needed.
  *
  * Standard-C build (collection-list input):
- *   gcc -std=c17 -O2 -Wall -Wextra -Wpedantic save_load_index.c -o save_load_index.exe
+ *   gcc -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_index.c -o statistics_index.exe
  * Optional folder-input build (requires dirent.h):
- *   gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 save_load_index.c -o save_load_index.exe
+ *   gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 statistics_index.c -o statistics_index.exe
  *
- * Supporting collection, tokenization, indexing and ranking functions are
- * included so that saving, reloading, searching and previewing can be tried
- * by compiling this file alone. Task 6 reports are not included.
+ * Reading order:
+ *   1. Shared structures and public function declarations.
+ *   2. Collection input and inverted-index construction/search.
+ *   3. Statistics display and TXT/CSV reports.
+ *   4. Versioned index saving/loading and validation.
+ *   5. Console input, the complete 0-9 menu and main().
  */
 
 /*
@@ -41,16 +45,20 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #ifdef ENABLE_DIRECTORY_INPUT
 #include <dirent.h>
 #endif
 
-/* Shared structures and function declarations. */
+/* ========================================================================
+ * SHARED STRUCTURES AND PUBLIC FUNCTION DECLARATIONS
+ * ======================================================================== */
 
 #define MAX_DOCUMENTS 6000
 #define MAX_FILENAME 300
@@ -110,17 +118,37 @@ int index_build(SearchIndex *index);
 size_t index_search(SearchIndex *index, const char *query,
                     SearchResult *results, size_t capacity);
 
-/* Collection input leaves the destination unchanged if it fails. */
+/* Accepts a collection list, or a folder when ENABLE_DIRECTORY_INPUT is set.
+   Failure leaves the destination unchanged. Index building is a separate step. */
 int collection_load(SearchIndex *destination, const char *path,
-                    char *error, size_t error_size);
-/* The saved format contains byte lengths, documents, terms and postings. */
+                     char *error, size_t error_size);
+
+/* Prints collection, per-document and index statistics to stream.
+   The caller owns stream. An unready index produces a friendly message. */
+void statistics_print(const SearchIndex *index, FILE *stream);
+
+/* Exports statistics and optional search results. csv != 0 selects CSV;
+   csv == 0 selects text. Pass NULL, 0, NULL for statistics only.
+   Document IDs remain zero-based; result ranks start at one.
+   Returns 1 on success, 0 on failure and sets error when space is provided. */
+int statistics_export(const SearchIndex *index,
+                      const SearchResult *results, size_t result_count,
+                      const char *query, const char *path, int csv,
+                      char *error, size_t error_size);
+
+/* Versioned, byte-length-prefixed text format. Returns 1 on success, 0 on
+   failure. error receives a readable diagnostic when space is provided. */
 int index_save(const SearchIndex *index, const char *path,
                char *error, size_t error_size);
-/* destination must be initialized; a failed load retains its current index. */
+
+/* destination must have been initialized with index_init. Loading builds a
+   temporary index; a failure leaves destination unchanged. */
 int index_load(SearchIndex *destination, const char *path,
                char *error, size_t error_size);
 
-/* Collection input (standard C by default). */
+/* ========================================================================
+ * COLLECTION INPUT: STANDARD-C LISTS AND OPTIONAL FOLDER ADAPTER
+ * ======================================================================== */
 
 #define MAX_PATH_BYTES 4095
 
@@ -297,7 +325,9 @@ int collection_load(SearchIndex *destination, const char *path,
     return 1;
 }
 
-/* Supporting inverted-index implementation. */
+/* ========================================================================
+ * INVERTED INDEX: TOKENIZATION, CONSTRUCTION AND RANKED SEARCH
+ * ======================================================================== */
 
 static int letter(unsigned char ch)
 {
@@ -515,12 +545,341 @@ size_t index_search(SearchIndex *index, const char *query,
     return count;
 }
 
-/* Task 9 persistence: original versioned format and strict validation. */
+/* ========================================================================
+ * STATISTICS DISPLAY AND TXT/CSV REPORTS
+ * ======================================================================== */
+
+/* Three decimal characters per byte cover any size_t value. */
+#define NUMBER_BUFFER_SIZE (3 * sizeof(size_t) + 1)
+
+enum CsvColumn {
+    COL_SECTION,
+    COL_DOCUMENT_COUNT,
+    COL_DOCUMENT_ID,
+    COL_FILENAME,
+    COL_TOTAL_WORDS,
+    COL_UNIQUE_WORDS,
+    COL_POSTING_RELATIONSHIPS,
+    COL_QUERY,
+    COL_RESULT_COUNT,
+    COL_RANK,
+    COL_SCORE,
+    COL_COUNT
+};
+
+static void set_error(char *error, size_t error_size, const char *message)
+{
+    if (error != NULL && error_size > 0) {
+        snprintf(error, error_size, "%s", message);
+    }
+}
+
+static void set_io_error(char *error, size_t error_size,
+                         const char *message, int error_code)
+{
+    if (error == NULL || error_size == 0) {
+        return;
+    }
+    if (error_code != 0) {
+        snprintf(error, error_size, "%s: %s", message, strerror(error_code));
+    } else {
+        snprintf(error, error_size, "%s", message);
+    }
+}
+
+static int write_text_statistics(const SearchIndex *index, FILE *stream)
+{
+    size_t i;
+
+    if (fprintf(stream,
+                "Search Index Report\n"
+                "===================\n\n"
+                "Collection statistics\n"
+                "Documents: %zu\n"
+                "Total words (occurrences): %zu\n"
+                "Unique words across all documents: %zu\n\n"
+                "Per-document statistics\n",
+                index->doc_count, index->total_terms, index->term_count) < 0) {
+        return 0;
+    }
+
+    if (index->doc_count == 0 && fputs("No documents.\n", stream) == EOF) {
+        return 0;
+    }
+    for (i = 0; i < index->doc_count; ++i) {
+        const Document *document = &index->documents[i];
+        if (fprintf(stream,
+                    "Document ID: %zu\n"
+                    "File: %s\n"
+                    "Total words (occurrences): %zu\n"
+                    "Unique words: %zu\n\n",
+                    i, document->filename, document->total_terms,
+                    document->unique_terms) < 0) {
+            return 0;
+        }
+    }
+
+    return fprintf(stream,
+                   "\nIndex statistics\n"
+                   "Unique indexed words: %zu\n"
+                   "Word-document relationships: %zu\n",
+                   index->term_count, index->posting_count) >= 0;
+}
+
+static int write_text_results(const SearchIndex *index,
+                              const SearchResult *results,
+                              size_t result_count, const char *query,
+                              FILE *stream)
+{
+    size_t i;
+
+    if (fprintf(stream,
+                "\nSearch results\n"
+                "Query: %s\n"
+                "Result count: %zu\n",
+                query != NULL ? query : "", result_count) < 0) {
+        return 0;
+    }
+    if (result_count == 0 && fputs("No matching documents.\n", stream) == EOF) {
+        return 0;
+    }
+    for (i = 0; i < result_count; ++i) {
+        const SearchResult *result = &results[i];
+        if (fprintf(stream,
+                    "Rank: %zu | Document ID: %d | File: %s | Score: %zu\n",
+                    i + 1, result->docId,
+                    index->documents[result->docId].filename,
+                    result->score) < 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Quote fields containing CSV separators and double every embedded quote. */
+static int write_csv_field(FILE *stream, const char *value)
+{
+    const unsigned char *p;
+
+    if (strpbrk(value, ",\"\r\n") == NULL) {
+        return fputs(value, stream) != EOF;
+    }
+    if (fputc('"', stream) == EOF) {
+        return 0;
+    }
+    for (p = (const unsigned char *)value; *p != '\0'; ++p) {
+        if (*p == '"' && fputc('"', stream) == EOF) {
+            return 0;
+        }
+        if (fputc(*p, stream) == EOF) {
+            return 0;
+        }
+    }
+    return fputc('"', stream) != EOF;
+}
+
+static int write_csv_row(FILE *stream, const char *const fields[COL_COUNT])
+{
+    size_t i;
+
+    for (i = 0; i < COL_COUNT; ++i) {
+        if (i != 0 && fputc(',', stream) == EOF) {
+            return 0;
+        }
+        if (!write_csv_field(stream, fields[i] != NULL ? fields[i] : "")) {
+            return 0;
+        }
+    }
+    return fputs("\r\n", stream) != EOF;
+}
+
+static int write_csv_report(const SearchIndex *index,
+                             const SearchResult *results,
+                             size_t result_count, const char *query,
+                             int include_results, FILE *stream)
+{
+    const char *header[COL_COUNT] = {
+        "section", "document_count", "document_id", "filename",
+        "total_words", "unique_words", "posting_relationships", "query",
+        "result_count", "rank", "score"
+    };
+    const char *fields[COL_COUNT] = {0};
+    char document_count[NUMBER_BUFFER_SIZE];
+    char document_id[NUMBER_BUFFER_SIZE];
+    char total_words[NUMBER_BUFFER_SIZE];
+    char unique_words[NUMBER_BUFFER_SIZE];
+    char relationships[NUMBER_BUFFER_SIZE];
+    char result_total[NUMBER_BUFFER_SIZE];
+    char rank[NUMBER_BUFFER_SIZE];
+    char score[NUMBER_BUFFER_SIZE];
+    size_t i;
+
+    if (!write_csv_row(stream, header)) {
+        return 0;
+    }
+
+    snprintf(document_count, sizeof(document_count), "%zu", index->doc_count);
+    snprintf(total_words, sizeof(total_words), "%zu", index->total_terms);
+    snprintf(unique_words, sizeof(unique_words), "%zu", index->term_count);
+    fields[COL_SECTION] = "collection";
+    fields[COL_DOCUMENT_COUNT] = document_count;
+    fields[COL_TOTAL_WORDS] = total_words;
+    fields[COL_UNIQUE_WORDS] = unique_words;
+    if (!write_csv_row(stream, fields)) {
+        return 0;
+    }
+
+    fields[COL_SECTION] = "document";
+    fields[COL_DOCUMENT_COUNT] = NULL;
+    fields[COL_DOCUMENT_ID] = document_id;
+    for (i = 0; i < index->doc_count; ++i) {
+        const Document *document = &index->documents[i];
+        snprintf(document_id, sizeof(document_id), "%zu", i);
+        snprintf(total_words, sizeof(total_words), "%zu", document->total_terms);
+        snprintf(unique_words, sizeof(unique_words), "%zu", document->unique_terms);
+        fields[COL_FILENAME] = document->filename;
+        if (!write_csv_row(stream, fields)) {
+            return 0;
+        }
+    }
+
+    memset(fields, 0, sizeof(fields));
+    snprintf(unique_words, sizeof(unique_words), "%zu", index->term_count);
+    snprintf(relationships, sizeof(relationships), "%zu", index->posting_count);
+    fields[COL_SECTION] = "index";
+    fields[COL_UNIQUE_WORDS] = unique_words;
+    fields[COL_POSTING_RELATIONSHIPS] = relationships;
+    if (!write_csv_row(stream, fields)) {
+        return 0;
+    }
+
+    if (!include_results) {
+        return 1;
+    }
+    memset(fields, 0, sizeof(fields));
+    snprintf(result_total, sizeof(result_total), "%zu", result_count);
+    fields[COL_SECTION] = "search";
+    fields[COL_QUERY] = query != NULL ? query : "";
+    fields[COL_RESULT_COUNT] = result_total;
+    if (!write_csv_row(stream, fields)) {
+        return 0;
+    }
+
+    fields[COL_SECTION] = "search_result";
+    fields[COL_RESULT_COUNT] = NULL;
+    fields[COL_DOCUMENT_ID] = document_id;
+    fields[COL_RANK] = rank;
+    fields[COL_SCORE] = score;
+    for (i = 0; i < result_count; ++i) {
+        snprintf(document_id, sizeof(document_id), "%d", results[i].docId);
+        snprintf(rank, sizeof(rank), "%zu", i + 1);
+        snprintf(score, sizeof(score), "%zu", results[i].score);
+        fields[COL_FILENAME] = index->documents[results[i].docId].filename;
+        if (!write_csv_row(stream, fields)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+void statistics_print(const SearchIndex *index, FILE *stream)
+{
+    if (stream == NULL) {
+        return;
+    }
+    if (index == NULL || !index->ready) {
+        fputs("No index is ready. Build or load an index first.\n", stream);
+        return;
+    }
+    if (index->doc_count > MAX_DOCUMENTS) {
+        fputs("Invalid index: document count exceeds the limit.\n", stream);
+        return;
+    }
+    (void)write_text_statistics(index, stream);
+}
+
+int statistics_export(const SearchIndex *index,
+                      const SearchResult *results, size_t result_count,
+                      const char *query, const char *path, int csv,
+                      char *error, size_t error_size)
+{
+    FILE *stream;
+    size_t i;
+    int include_results;
+    int write_ok;
+    int write_error;
+    int close_status;
+
+    set_error(error, error_size, "");
+    if (index == NULL || !index->ready) {
+        set_error(error, error_size,
+                  "No index is ready. Build or load an index first.");
+        return 0;
+    }
+    if (index->doc_count > MAX_DOCUMENTS) {
+        set_error(error, error_size,
+                  "Invalid index: document count exceeds the limit.");
+        return 0;
+    }
+    if (path == NULL || path[0] == '\0') {
+        set_error(error, error_size, "Please provide a report file path.");
+        return 0;
+    }
+    if (result_count != 0 && results == NULL) {
+        set_error(error, error_size, "Search results are missing.");
+        return 0;
+    }
+    for (i = 0; i < result_count; ++i) {
+        if (results[i].docId < 0 || (size_t)results[i].docId >= index->doc_count) {
+            set_error(error, error_size,
+                      "A search result refers to an invalid document ID.");
+            return 0;
+        }
+    }
+
+    /* Binary mode preserves UTF-8 bytes and our explicit CSV CRLF endings. */
+    stream = fopen(path, "wb");
+    if (stream == NULL) {
+        set_io_error(error, error_size, "Could not open the report file", errno);
+        return 0;
+    }
+    include_results = query != NULL || results != NULL || result_count != 0;
+    errno = 0;
+    if (csv) {
+        write_ok = write_csv_report(index, results, result_count, query,
+                                   include_results, stream);
+    } else {
+        write_ok = write_text_statistics(index, stream);
+        if (write_ok && include_results) {
+            write_ok = write_text_results(index, results, result_count,
+                                          query, stream);
+        }
+    }
+    if (ferror(stream)) {
+        write_ok = 0;
+    }
+    write_error = errno;
+    close_status = fclose(stream);
+    if (!write_ok) {
+        set_io_error(error, error_size, "Could not write the report", write_error);
+        return 0;
+    }
+    if (close_status != 0) {
+        set_io_error(error, error_size, "Could not finish the report file", errno);
+        return 0;
+    }
+    return 1;
+}
+
+/* ========================================================================
+ * INDEX PERSISTENCE: VERSIONED SAVE/LOAD FORMAT AND STRICT VALIDATION
+ * File-format helpers use a persistence_ prefix where names would collide.
+ * ======================================================================== */
 
 #define INDEX_MAGIC "COMP1028_INDEX 1\n"
 #define RECORD_LINE_BYTES 256
 
-static void set_error(char *error, size_t size, const char *message)
+static void persistence_set_error(char *error, size_t size, const char *message)
 {
     if (error != NULL && size > 0)
         snprintf(error, size, "%s", message);
@@ -626,13 +985,13 @@ int index_save(const SearchIndex *index, const char *path,
 {
     FILE *file;
     size_t i;
-    set_error(error, error_size, "");
+    persistence_set_error(error, error_size, "");
     if (path == NULL || path[0] == '\0') {
-        set_error(error, error_size, "Index file path cannot be empty.");
+        persistence_set_error(error, error_size, "Index file path cannot be empty.");
         return 0;
     }
     if (!valid_index(index)) {
-        set_error(error, error_size,
+        persistence_set_error(error, error_size,
                   "Build a valid index before saving; counters must match postings.");
         return 0;
     }
@@ -640,7 +999,7 @@ int index_save(const SearchIndex *index, const char *path,
        The records themselves are readable decimal text. */
     file = fopen(path, "wb");
     if (file == NULL) {
-        set_error(error, error_size, "Cannot open index file for writing.");
+        persistence_set_error(error, error_size, "Cannot open index file for writing.");
         return 0;
     }
     if (fputs(INDEX_MAGIC, file) == EOF ||
@@ -683,19 +1042,19 @@ int index_save(const SearchIndex *index, const char *path,
     if (fputs("END\n", file) == EOF || ferror(file))
         goto write_error;
     if (fclose(file) != 0) {
-        set_error(error, error_size, "Could not finish writing the index file.");
+        persistence_set_error(error, error_size, "Could not finish writing the index file.");
         return 0;
     }
     return 1;
 
 write_error:
     fclose(file);
-    set_error(error, error_size,
+    persistence_set_error(error, error_size,
               "Could not write the complete index file; the output may be incomplete.");
     return 0;
 }
 
-static int read_line(FILE *file, char *line, size_t size)
+static int persistence_read_line(FILE *file, char *line, size_t size)
 {
     size_t length;
     if (fgets(line, (int)size, file) == NULL)
@@ -712,7 +1071,7 @@ static int read_numbers(FILE *file, const char *label,
     char line[RECORD_LINE_BYTES];
     char *cursor;
     size_t label_length = strlen(label), i;
-    if (!read_line(file, line, sizeof line) ||
+    if (!persistence_read_line(file, line, sizeof line) ||
         strncmp(line, label, label_length) != 0 ||
         line[label_length] != ' ')
         return 0;
@@ -758,18 +1117,18 @@ int index_load(SearchIndex *destination, const char *path,
     size_t expected_terms, expected_postings, i;
     char line[RECORD_LINE_BYTES];
 
-    set_error(error, error_size, "");
+    persistence_set_error(error, error_size, "");
     if (destination == NULL || path == NULL || path[0] == '\0') {
-        set_error(error, error_size, "Provide an initialized index and a file path.");
+        persistence_set_error(error, error_size, "Provide an initialized index and a file path.");
         return 0;
     }
     file = fopen(path, "rb");
     if (file == NULL) {
-        set_error(error, error_size, "Cannot open index file for reading.");
+        persistence_set_error(error, error_size, "Cannot open index file for reading.");
         return 0;
     }
-    if (!read_line(file, line, sizeof line) || strcmp(line, INDEX_MAGIC) != 0) {
-        set_error(error, error_size, "Invalid index file format or unsupported version.");
+    if (!persistence_read_line(file, line, sizeof line) || strcmp(line, INDEX_MAGIC) != 0) {
+        persistence_set_error(error, error_size, "Invalid index file format or unsupported version.");
         goto failure;
     }
     if (!read_numbers(file, "COUNTS", counts, 4) ||
@@ -778,12 +1137,12 @@ int index_load(SearchIndex *destination, const char *path,
         counts[1] > counts[0] * MAX_DOCUMENT_BYTES ||
         counts[2] > counts[3] || counts[3] > counts[1] ||
         (counts[2] == 0 && counts[3] != 0)) {
-        set_error(error, error_size, "Invalid index counts.");
+        persistence_set_error(error, error_size, "Invalid index counts.");
         goto failure;
     }
     temporary = malloc(sizeof *temporary);
     if (temporary == NULL) {
-        set_error(error, error_size, "Could not allocate the loaded index.");
+        persistence_set_error(error, error_size, "Could not allocate the loaded index.");
         goto failure;
     }
     index_init(temporary);
@@ -797,19 +1156,19 @@ int index_load(SearchIndex *destination, const char *path,
             fields[1] == 0 || fields[1] >= MAX_FILENAME ||
             fields[2] > MAX_DOCUMENT_BYTES || fields[3] > fields[2] ||
             fields[4] > fields[3]) {
-            set_error(error, error_size, "Invalid or truncated document record.");
+            persistence_set_error(error, error_size, "Invalid or truncated document record.");
             goto failure;
         }
         expected_total[i] = (size_t)fields[3];
         expected_unique[i] = (size_t)fields[4];
         document->content = malloc((size_t)fields[2] + 1);
         if (document->content == NULL) {
-            set_error(error, error_size, "Could not allocate document content.");
+            persistence_set_error(error, error_size, "Could not allocate document content.");
             goto failure;
         }
         if (!read_block(file, document->filename, (size_t)fields[1]) ||
             !read_block(file, document->content, (size_t)fields[2])) {
-            set_error(error, error_size, "Invalid or truncated document data.");
+            persistence_set_error(error, error_size, "Invalid or truncated document data.");
             goto failure;
         }
     }
@@ -824,7 +1183,7 @@ int index_load(SearchIndex *destination, const char *path,
             !read_block(file, word, (size_t)fields[0]) ||
             !valid_word(word, (size_t)fields[0]) ||
             index_find_term(temporary, word) != NULL) {
-            set_error(error, error_size, "Invalid, duplicate or truncated term record.");
+            persistence_set_error(error, error_size, "Invalid, duplicate or truncated term record.");
             goto failure;
         }
         posting_count = (size_t)fields[1];
@@ -833,12 +1192,12 @@ int index_load(SearchIndex *destination, const char *path,
             if (!read_numbers(file, "P", fields, 2) ||
                 fields[0] >= temporary->doc_count ||
                 fields[1] == 0 || fields[1] > UINT_MAX) {
-                set_error(error, error_size, "Invalid or truncated posting record.");
+                persistence_set_error(error, error_size, "Invalid or truncated posting record.");
                 goto failure;
             }
             id = (size_t)fields[0];
             if (seen[id] == i + 1) {
-                set_error(error, error_size, "Duplicate document ID in a posting list.");
+                persistence_set_error(error, error_size, "Duplicate document ID in a posting list.");
                 goto failure;
             }
             seen[id] = i + 1;
@@ -846,13 +1205,13 @@ int index_load(SearchIndex *destination, const char *path,
                 fields[1] > expected_total[id] -
                             temporary->documents[id].total_terms ||
                 temporary->documents[id].unique_terms >= expected_unique[id]) {
-                set_error(error, error_size,
+                persistence_set_error(error, error_size,
                           "Posting data exceeds the document counters.");
                 goto failure;
             }
             if (!index_add_posting(temporary, word, (int)id,
                                    (unsigned)fields[1])) {
-                set_error(error, error_size, "Could not restore posting data safely.");
+                persistence_set_error(error, error_size, "Could not restore posting data safely.");
                 goto failure;
             }
         }
@@ -860,24 +1219,24 @@ int index_load(SearchIndex *destination, const char *path,
     if (temporary->total_terms != (size_t)counts[1] ||
         temporary->term_count != expected_terms ||
         temporary->posting_count != expected_postings) {
-        set_error(error, error_size, "Index counters do not match the saved posting data.");
+        persistence_set_error(error, error_size, "Index counters do not match the saved posting data.");
         goto failure;
     }
     for (i = 0; i < temporary->doc_count; ++i) {
         if (temporary->documents[i].total_terms != expected_total[i] ||
             temporary->documents[i].unique_terms != expected_unique[i]) {
-            set_error(error, error_size, "Document counters do not match the posting data.");
+            persistence_set_error(error, error_size, "Document counters do not match the posting data.");
             goto failure;
         }
     }
-    if (!read_line(file, line, sizeof line) || strcmp(line, "END\n") != 0 ||
+    if (!persistence_read_line(file, line, sizeof line) || strcmp(line, "END\n") != 0 ||
         fgetc(file) != EOF || ferror(file)) {
-        set_error(error, error_size, "Invalid index ending, extra data or read failure.");
+        persistence_set_error(error, error_size, "Invalid index ending, extra data or read failure.");
         goto failure;
     }
     if (fclose(file) != 0) {
         file = NULL;
-        set_error(error, error_size, "Could not finish reading the index file.");
+        persistence_set_error(error, error_size, "Could not finish reading the index file.");
         goto failure;
     }
     file = NULL;
@@ -898,76 +1257,55 @@ failure:
     return 0;
 }
 
-/* Console demonstration. cli_ names are distinct from file-format helpers. */
+/* ========================================================================
+ * CONSOLE INPUT, COMPLETE 0-9 MENU AND APPLICATION ENTRY POINT
+ * ======================================================================== */
 
-/* Read and drain a complete input line: 1 = success, 0 = EOF, -1 = error.
-   Reject embedded NUL bytes so numeric/path input cannot hide trailing data. */
-static int cli_read_line(char *buffer, size_t capacity)
+/* Read and drain a whole line: 1 = success, 0 = EOF, -1 = overlong/error. */
+static int read_line(char *buffer, size_t capacity)
 {
-    size_t length = 0;
-    int ch, too_long = 0, contains_nul = 0;
-    if (buffer == NULL || capacity < 2)
-        return -1;
-    while ((ch = fgetc(stdin)) != EOF && ch != '\n') {
-        if (ch == '\0')
-            contains_nul = 1;
-        if (length + 1 < capacity)
-            buffer[length++] = (char)ch;
-        else
-            too_long = 1;
+    if (!fgets(buffer, (int)capacity, stdin))
+        return ferror(stdin) ? -1 : 0;
+    if (!strchr(buffer, '\n')) {
+        int ch = getchar();
+        if (ch != '\n' && ch != EOF) {
+            while ((ch = getchar()) != '\n' && ch != EOF)
+                ;
+            puts("Input is too long. Please try again.");
+            return -1;
+        }
     }
-    buffer[length] = '\0';
-    if (ferror(stdin)) {
-        fputs("Could not read console input.\n", stderr);
-        return -1;
-    }
-    if (ch == EOF && length == 0 && !too_long && !contains_nul)
-        return 0;
-    if (too_long || contains_nul) {
-        puts(too_long ? "Input is too long. Please try again." :
-                        "Input must be text without embedded NUL bytes.");
-        return -1;
-    }
-    if (length > 0 && buffer[length - 1] == '\r')
-        buffer[length - 1] = '\0';
+    buffer[strcspn(buffer, "\r\n")] = '\0';
     return 1;
 }
 
-static int cli_parse_number(const char *text, long minimum, long maximum,
-                            long *value)
+static int parse_number(const char *text, long minimum, long maximum, long *value)
 {
     char *end;
-    long number;
     errno = 0;
-    number = strtol(text, &end, 10);
+    long number = strtol(text, &end, 10);
     if (end == text || errno == ERANGE)
         return 0;
     while (isspace((unsigned char)*end))
         ++end;
-    if (*end != '\0' || number < minimum || number > maximum)
+    if (*end || number < minimum || number > maximum)
         return 0;
     *value = number;
     return 1;
 }
 
-static int cli_index_path(char *path, size_t capacity)
+static int read_path(char *path, size_t size, const char *default_path)
 {
-    int length;
-    printf("Index file path (Enter for index.idx): ");
+    printf("Output/input file (Enter for %s): ", default_path);
     fflush(stdout);
-    if (cli_read_line(path, capacity) != 1)
+    if (read_line(path, size) != 1)
         return 0;
-    if (*path == '\0') {
-        length = snprintf(path, capacity, "%s", "index.idx");
-        if (length < 0 || (size_t)length >= capacity) {
-            puts("Index path is too long.");
-            return 0;
-        }
-    }
+    if (!*path)
+        snprintf(path, size, "%s", default_path);
     return 1;
 }
 
-static int cli_require_index(const SearchIndex *index)
+static int require_index(const SearchIndex *index)
 {
     if (index->ready)
         return 1;
@@ -975,128 +1313,138 @@ static int cli_require_index(const SearchIndex *index)
     return 0;
 }
 
-static void cli_status(const SearchIndex *index)
+static int readFile(SearchIndex *active)
 {
-    printf("Index ready: %s\n", index->ready ? "yes" : "no");
-    printf("Documents: %zu\n", index->doc_count);
-    printf("Total term occurrences: %zu\n", index->total_terms);
-    printf("Unique terms: %zu\n", index->term_count);
-    printf("Term-document postings: %zu\n", index->posting_count);
-}
-
-static void cli_load_collection(SearchIndex *active)
-{
-    char path[MAX_PATH_BYTES + 1], error[256];
-    SearchIndex *candidate;
+    char path[4096], error[256];
 #ifdef ENABLE_DIRECTORY_INPUT
     printf("Folder or collection-list path: ");
 #else
     printf("Collection-list path (one document path per line): ");
 #endif
     fflush(stdout);
-    if (cli_read_line(path, sizeof path) != 1)
-        return;
-    candidate = malloc(sizeof *candidate);
-    if (candidate == NULL) {
+    if (read_line(path, sizeof path) != 1)
+        return 0;
+    SearchIndex *candidate = malloc(sizeof *candidate);
+    if (!candidate) {
         puts("Could not allocate a new collection.");
-        return;
+        return 0;
     }
     index_init(candidate);
+    clock_t start = clock();
     if (!collection_load(candidate, path, error, sizeof error)) {
         printf("Collection not loaded: %s\n", error);
-        index_free(candidate);
         free(candidate);
-        return;
+        return 0;
     }
     if (!index_build(candidate)) {
-        puts("Could not build the index. The previous index is unchanged.");
+        puts("Could not build the index. The previous collection is still available.");
         index_free(candidate);
         free(candidate);
-        return;
+        return 0;
     }
+    clock_t end = clock();
     index_free(active);
     *active = *candidate;
     free(candidate);
-    puts("Collection loaded and index built.");
-    cli_status(active);
+    printf("Loaded %zu documents and built %zu terms / %zu postings.\n",
+           active->doc_count, active->term_count, active->posting_count);
+    if (start != (clock_t)-1 && end != (clock_t)-1)
+        printf("Load + build CPU time: %.6f seconds\n", (double)(end - start) / CLOCKS_PER_SEC);
+    return 1;
 }
 
-static void cli_search(SearchIndex *index, SearchResult *results)
+static void searchEngine(SearchIndex *index, SearchResult *last_results,
+                         size_t *last_count, char *last_query)
 {
-    char query[MAX_QUERY_BYTES + 1], input[128];
-    size_t count;
-    long requested = 5;
-    int has_letter = 0;
-    if (!cli_require_index(index))
+    if (!require_index(index))
         return;
-    printf("Search query: ");
-    fflush(stdout);
-    if (cli_read_line(query, sizeof query) != 1)
-        return;
-    for (size_t i = 0; query[i] != '\0'; ++i) {
-        if (letter((unsigned char)query[i]))
-            has_letter = 1;
-    }
-    if (!has_letter) {
-        puts("Enter a query containing at least one English letter.");
-        return;
-    }
-    count = index_search(index, query, results, MAX_DOCUMENTS);
-    if (count == 0) {
-        puts("No matching documents.");
-        return;
-    }
-    printf("Top K (Enter for 5): ");
-    fflush(stdout);
-    if (cli_read_line(input, sizeof input) != 1)
-        return;
-    if (*input != '\0' &&
-        !cli_parse_number(input, 1, MAX_DOCUMENTS, &requested)) {
-        printf("Enter a whole number from 1 to %d.\n", MAX_DOCUMENTS);
-        return;
-    }
-    if (count > (size_t)requested)
-        count = (size_t)requested;
-    puts("Rank\tDocument ID\tFile\tScore");
-    for (size_t rank = 0; rank < count; ++rank) {
-        printf("%zu\t%d\t%s\t%zu\n", rank + 1, results[rank].docId,
-               index->documents[results[rank].docId].filename,
-               results[rank].score);
-    }
-}
-
-static void cli_preview(const SearchIndex *index)
-{
+    char query[MAX_QUERY_BYTES + 1];
     char input[128];
-    long id;
-    if (!cli_require_index(index))
+    SearchResult results[MAX_DOCUMENTS];
+    for (;;) {
+        printf("\nSearch query (/exit to return): ");
+        fflush(stdout);
+        int status = read_line(query, sizeof query);
+        if (status == 0)
+            return;
+        if (status < 0) {
+            if (ferror(stdin))
+                return;
+            continue;
+        }
+        if (!strcmp(query, "/exit"))
+            return;
+        int has_letter = 0;
+        for (size_t i = 0; query[i]; ++i)
+            if ((query[i] >= 'A' && query[i] <= 'Z') ||
+                (query[i] >= 'a' && query[i] <= 'z'))
+                has_letter = 1;
+        if (!has_letter) {
+            puts("Enter a query containing at least one English letter.");
+            continue;
+        }
+        size_t count = index_search(index, query, results, MAX_DOCUMENTS);
+        if (!count) {
+            strcpy(last_query, query);
+            *last_count = 0;
+            puts("No matching documents.");
+            continue;
+        }
+        printf("Top K (Enter for 5): ");
+        fflush(stdout);
+        if (read_line(input, sizeof input) != 1)
+            return;
+        long requested = 5;
+        if (*input && !parse_number(input, 1, MAX_DOCUMENTS, &requested)) {
+            puts("Enter a positive whole number between 1 and 6000.");
+            continue;
+        }
+        if (count > (size_t)requested)
+            count = (size_t)requested;
+        puts("Rank\tDocument ID\tFile\tScore");
+        for (size_t rank = 0; rank < count; ++rank)
+            printf("%zu\t%d\t%s\t%zu\n", rank + 1, results[rank].docId,
+                   index->documents[results[rank].docId].filename, results[rank].score);
+        memcpy(last_results, results, count * sizeof *results);
+        *last_count = count;
+        strcpy(last_query, query);
+    }
+}
+
+static void view_document(const SearchIndex *index)
+{
+    if (!require_index(index))
         return;
-    if (index->doc_count == 0) {
-        puts("The index contains no documents.");
+    if (!index->doc_count) {
+        puts("The collection contains no documents.");
         return;
     }
+    char input[128];
     printf("Document ID (0-%zu): ", index->doc_count - 1);
     fflush(stdout);
-    if (cli_read_line(input, sizeof input) != 1)
+    if (read_line(input, sizeof input) != 1)
         return;
-    if (!cli_parse_number(input, 0, (long)index->doc_count - 1, &id)) {
+    long id;
+    if (!parse_number(input, 0, (long)index->doc_count - 1, &id)) {
         puts("Invalid document ID.");
         return;
     }
     printf("\n%s\n%s\n", index->documents[id].filename,
-           index->documents[id].content != NULL ?
-           index->documents[id].content : "");
+           index->documents[id].content ? index->documents[id].content : "");
 }
 
-static void cli_menu(void)
+static void show_menu(void)
 {
-    puts("\nTask 9: Save and Reload an Inverted Index\n"
+    puts("\nDocument Search and Information Retrieval System\n"
          "1. Load collection + build index\n"
-         "2. Save index\n"
-         "3. Load saved index\n"
+         "2. Rebuild current index\n"
+         "3. Show collection, document and index statistics\n"
          "4. Search\n"
-         "5. Preview document\n"
-         "6. Show index status\n"
+         "5. View document\n"
+         "6. Save text report\n"
+         "7. Save CSV report\n"
+         "8. Save index\n"
+         "9. Load saved index\n"
          "0. Exit");
     printf("Choice: ");
     fflush(stdout);
@@ -1105,21 +1453,21 @@ static void cli_menu(void)
 int main(void)
 {
     SearchIndex *index = malloc(sizeof *index);
-    SearchResult *results = malloc(MAX_DOCUMENTS * sizeof *results);
-    char input[128], path[MAX_PATH_BYTES + 1], error[256];
-    int done = 0, exit_status;
-    if (index == NULL || results == NULL) {
+    SearchResult *last_results = malloc(MAX_DOCUMENTS * sizeof *last_results);
+    if (!index || !last_results) {
         free(index);
-        free(results);
+        free(last_results);
         fputs("Could not allocate the application.\n", stderr);
-        return EXIT_FAILURE;
+        return 1;
     }
     index_init(index);
+    size_t last_count = 0;
+    char last_query[MAX_QUERY_BYTES + 1] = "";
+    char input[128], path[4096], error[256];
+    int done = 0;
     while (!done) {
-        int status;
-        long choice;
-        cli_menu();
-        status = cli_read_line(input, sizeof input);
+        show_menu();
+        int status = read_line(input, sizeof input);
         if (status == 0)
             break;
         if (status < 0) {
@@ -1127,8 +1475,9 @@ int main(void)
                 break;
             continue;
         }
-        if (!cli_parse_number(input, 0, 6, &choice)) {
-            puts("Invalid menu choice. Enter a number from 0 to 6.");
+        long choice;
+        if (!parse_number(input, 0, 9, &choice)) {
+            puts("Invalid menu choice. Enter a number from 0 to 9.");
             continue;
         }
         switch (choice) {
@@ -1136,44 +1485,69 @@ int main(void)
             done = 1;
             break;
         case 1:
-            cli_load_collection(index);
+            if (readFile(index)) {
+                last_count = 0;
+                last_query[0] = '\0';
+            }
             break;
         case 2:
-            if (!cli_require_index(index) ||
-                !cli_index_path(path, sizeof path))
+            if (!index->doc_count) {
+                puts("No documents loaded.");
+                break;
+            }
+            if (index_build(index))
+                puts("Index rebuilt.");
+            else
+                puts("Could not rebuild the index.");
+            last_count = 0;
+            last_query[0] = '\0';
+            break;
+        case 3:
+            statistics_print(index, stdout);
+            break;
+        case 4:
+            searchEngine(index, last_results, &last_count, last_query);
+            break;
+        case 5:
+            view_document(index);
+            break;
+        case 6:
+        case 7:
+            if (!require_index(index) ||
+                !read_path(path, sizeof path, choice == 6 ? "report.txt" : "report.csv"))
+                break;
+            if (statistics_export(index, *last_query ? last_results : NULL,
+                                  last_count, *last_query ? last_query : NULL,
+                                  path, choice == 7, error, sizeof error))
+                printf("Report saved to %s\n", path);
+            else
+                printf("Report not saved: %s\n", error);
+            break;
+        case 8:
+            if (!require_index(index) || !read_path(path, sizeof path, "index.idx"))
                 break;
             if (index_save(index, path, error, sizeof error))
                 printf("Index saved to %s\n", path);
             else
                 printf("Index not saved: %s\n", error);
             break;
-        case 3:
-            if (!cli_index_path(path, sizeof path))
+        case 9:
+            if (!read_path(path, sizeof path, "index.idx"))
                 break;
             if (index_load(index, path, error, sizeof error)) {
-                puts("Index loaded without rebuilding.");
-                cli_status(index);
+                printf("Index loaded without rebuilding: %zu documents, %zu terms.\n",
+                       index->doc_count, index->term_count);
+                last_count = 0;
+                last_query[0] = '\0';
             } else {
                 printf("Index not loaded: %s\n", error);
-                puts("The previous index is unchanged.");
             }
             break;
-        case 4:
-            cli_search(index, results);
-            break;
-        case 5:
-            cli_preview(index);
-            break;
-        case 6:
-            cli_status(index);
-            break;
         }
-        if (ferror(stdin))
-            break;
     }
-    exit_status = ferror(stdin) ? EXIT_FAILURE : EXIT_SUCCESS;
+    int status = ferror(stdin) ? 1 : 0;
     index_free(index);
     free(index);
-    free(results);
-    return exit_status;
+    free(last_results);
+    return status;
 }

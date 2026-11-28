@@ -1,13 +1,13 @@
-# Independent C Sources for Tasks 6 and 9
+# Single-file Statistics, Reporting and Persistent Index
 
-Each task is a complete program in one C file. Each source includes its own entry point, shared structures and required implementations, so it can be compiled on its own without project-specific header files.
+The repository-root `statistics_index.c` combines the two contributions in one C17 program:
 
-| File | Task and functionality |
+| Contribution | Functionality |
 | --- | --- |
-| `statistics_standalone.c` | Task 6: collection/document/index statistics and TXT/CSV reports, with document input, index building, search and preview for demonstration |
-| `save_load_index.c` | Task 9: versioned index saving/loading and validation, with document input, index building, restored search, document preview and status display |
+| Task 6 | Collection, document and index statistics; TXT/CSV reports with optional latest search results |
+| Task 9 | Versioned index saving/loading and strict validation; failed loading preserves the current usable index |
 
-The Task 6 program contains the statistics/reporting module. The Task 9 program contains the persistence module. Both retain the shared document-processing and index support they need, together with the full MIT license notice.
+The source includes one copy of the shared document-processing/indexing structures and functions, both feature implementations, and one menu entry point. It compiles on its own without project-specific headers or other C sources and retains the full MIT license notice.
 
 ## Compile and run
 
@@ -15,20 +15,11 @@ Run these commands from the repository root in PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Path build -Force | Out-Null
-gcc -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_standalone.c -o build/statistics_standalone.exe
-gcc -std=c17 -O2 -Wall -Wextra -Wpedantic save_load_index.c -o build/save_load_index.exe
-.\build\statistics_standalone.exe
+gcc -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_index.c -o build/statistics_index.exe
+.\build\statistics_index.exe
 ```
 
-Run Task 9 with:
-
-```powershell
-.\build\save_load_index.exe
-```
-
-Compile each source separately as its own program. Both files define `main` and include shared implementations.
-
-The default builds use the standard C library and accept a collection-list file. Select menu option `1` and enter:
+The default build uses the standard C library and accepts a collection-list file. Select menu option `1` and enter:
 
 ```text
 examples/collection.txt
@@ -36,9 +27,9 @@ examples/collection.txt
 
 Document paths in the list are resolved relative to the list's directory. The supplied sample has 3 documents, including an empty document, 5 word occurrences, 3 unique words and 4 term-document relationships.
 
-The standalone sources are directly visible in the repository root. Run the executables from the repository root to use the sample paths above.
+Compile this source as its own program. The integrated group application continues to use its explicit five-source build in the root README.
 
-## Task 6 menu
+## Menu
 
 | Option | Action |
 | --- | --- |
@@ -49,43 +40,39 @@ The standalone sources are directly visible in the repository root. Run the exec
 | 5 | Preview a document by its zero-based ID |
 | 6 | Save a TXT report |
 | 7 | Save a CSV report |
+| 8 | Save the current index |
+| 9 | Load a saved index |
 | 0 | Exit |
 
-Enter at the report-path prompt to use `report.txt` or `report.csv`. Reports can include the latest displayed search results. Successfully loading a new collection or rebuilding clears old result state.
+Enter at the output/input-path prompt to use `report.txt`, `report.csv` or `index.idx`. Relative paths use the program's working directory; run from the repository root to use the examples above. Enter paths containing spaces without additional quotation marks.
 
-## Task 9 menu
+## Demonstrate both contributions
 
-| Option | Action |
-| --- | --- |
-| 1 | Load a collection and build its index |
-| 2 | Save the current index |
-| 3 | Load a saved index |
-| 4 | Search the current/restored index |
-| 5 | Preview a document by its zero-based ID |
-| 6 | Show readiness and index counters |
-| 0 | Exit |
+1. Choose `1` and load `examples/collection.txt`.
+2. Choose `3` to display all statistics.
+3. Choose `4`, search for `apple`, press Enter for Top K of 5, then enter `/exit`.
+4. Choose `6` and `7` to export text and CSV reports, optionally accepting the default filenames. Reports include the latest displayed search results.
+5. Choose `8` to save the index, then `0` to exit.
+6. Restart the program and choose `9` to load the saved index without rebuilding or loading the collection first.
+7. Choose `3`, `4`, `5`, `6` or `7` to inspect, search, preview or report on the restored index. Saved document text supports these operations even when the original input files are unavailable.
 
-To demonstrate persistence, load the sample with option `1`, then save with option `2`. Press Enter to use `index.idx`. Exit, restart Task 9, and use option `3` to load that file. Search and preview work from the restored index without loading the original collection again. Invalid index files produce an error and preserve the current usable index.
+Successfully loading a collection or saved index, or rebuilding, clears obsolete recent-query results. A malformed saved index produces a diagnostic and preserves the current usable index.
 
 ## Optional folder input
 
 When the compiler supplies `dirent.h`, enable the existing folder adapter:
 
 ```powershell
-gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_standalone.c -o build/statistics_standalone_folder.exe
-gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic save_load_index.c -o build/save_load_index_folder.exe
+gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_index.c -o build/statistics_index_folder.exe
+.\build\statistics_index_folder.exe
 ```
 
-At menu option `1`, use `examples/documents` when running from the repository root.
+Choose `1` and enter `examples/documents` when running from the repository root.
 
 ## Validation
 
-Both sources compiled without diagnostics using strict C17 flags (`-O2 -Wall -Wextra -Wpedantic -Werror`), with and without `ENABLE_DIRECTORY_INPUT`.
+The combined source passed strict C17 compilation with -O2 -Wall -Wextra -Wpedantic -Werror in both standard and folder-input builds. Each build also passed in an isolated directory containing only this source and no project headers or other sources.
 
-The existing feature-contract suite was linked separately against each standalone source's reused core, with its `main` renamed for testing and the other feature supplied by its original module. Each run passed 1012 checks with 0 failures. These are assertion and required allocation/file-I/O checks, not 1012 independent scenarios.
+The existing feature-contract driver passed 1012 checks with 0 failures against the combined implementation. These are assertions and required allocation/file-I/O checks, rather than 1012 independent scenarios. All 28 checks in the existing CLI driver passed, covering statistics, TXT/CSV export, search, save/restart/load without the original documents, restored preview/reporting, failed-load preservation and a 100,000-token sample.
 
-Task 6 also passed 34 standalone menu/process checks covering expected counts, TXT/CSV consistency, quoted query text, filenames with commas, latest-result snapshots, rebuild/no-match clearing, readiness guards and EOF handling. Task 9 was smoke-tested for save/restart/load, search, preview and preservation of the current index after a malformed load.
-
-These checks cover source extraction and functional behaviour. Final project benchmarking follows the group's evaluation plan.
-
-The integrated group application remains available through the repository-root modules and its existing build instructions. These two sources are independently runnable task deliverables.
+Final project benchmarking follows the group's evaluation plan.
