@@ -1,6 +1,10 @@
 @echo off
 cd /d "%~dp0"
-if exist "build\coursework.exe" (
+if exist "build\statistics_index.exe" (
+    "build\statistics_index.exe"
+) else if exist "statistics_index.exe" (
+    "statistics_index.exe"
+) else if exist "build\coursework.exe" (
     "build\coursework.exe"
 ) else if exist "coursework.exe" (
     "coursework.exe"

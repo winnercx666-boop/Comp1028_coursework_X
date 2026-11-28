@@ -14,7 +14,7 @@ gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic coursework.c 
 .\build\coursework.exe
 ```
 
-Alternatively, double-click `run.cmd` after building. It starts the program from the project directory and supports executables in either `build/` or the project root.
+After building, double-click `run.cmd` to start the program from the project directory. It starts `statistics_index.exe` from `build/` or the project root when available, and otherwise starts a compiled integrated group application.
 
 `ENABLE_DIRECTORY_INPUT` enables the original group's `dirent.h` folder-scanning adapter. The compiler must provide that platform interface. The indexing, statistics and persistence modules use only standard C libraries.
 
