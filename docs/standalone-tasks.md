@@ -19,6 +19,8 @@ gcc -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_index.c -o build/statistics
 .\build\statistics_index.exe
 ```
 
+After compiling, you can also double-click the repository-root `run.cmd`. It starts the combined executable from the project directory, so sample paths work, and keeps the console open after the program exits.
+
 The default build uses the standard C library and accepts a collection-list file. Select menu option `1` and enter:
 
 ```text
