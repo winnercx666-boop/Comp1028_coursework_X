@@ -36,8 +36,8 @@ The independently runnable task sources are available directly in the repository
 
 | Source | Purpose |
 |---|---|
-| [task6.c](task6.c) | Task 6: statistics and TXT/CSV reports |
-| [task9.c](task9.c) | Task 9: index saving/loading and validation |
+| [statistics_standalone.c](statistics_standalone.c) | Task 6: statistics and TXT/CSV reports |
+| [save_load_index.c](save_load_index.c) | Task 9: index saving/loading and validation |
 
 Build each standalone source as its own program. The integrated group application uses the five explicit production sources in the build commands above. See the [standalone task guide](docs/standalone-tasks.md) for compilation, sample input and menu instructions.
 
@@ -77,7 +77,7 @@ Relative output paths use the program's working directory. Paths may contain spa
 | `collection.c` / `collection.h` | Standard-C collection-list input and the optional original folder adapter |
 | `coursework.c` | Menu integration, document preview and recent-query state |
 
-The original function-local index is exposed through `SearchIndex` so search, reporting and persistence can reuse the same posting lists. Compile the five integrated application sources listed in the build commands above; their project headers remain required. The standalone `task6.c` and `task9.c` files are each compiled as a separate program.
+The original function-local index is exposed through `SearchIndex` so search, reporting and persistence can reuse the same posting lists. Compile the five integrated application sources listed in the build commands above; their project headers remain required. The standalone `statistics_standalone.c` and `save_load_index.c` files are each compiled as a separate program.
 
 ## Statistics and ranking definitions
 

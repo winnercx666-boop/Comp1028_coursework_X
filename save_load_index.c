@@ -3,9 +3,9 @@
  * Standalone C17 source; no project-specific header files are required.
  *
  * Standard-C build (collection-list input):
- *   gcc -std=c17 -O2 -Wall -Wextra -Wpedantic task9.c -o task9.exe
+ *   gcc -std=c17 -O2 -Wall -Wextra -Wpedantic save_load_index.c -o save_load_index.exe
  * Optional folder-input build (requires dirent.h):
- *   gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 task9.c -o task9.exe
+ *   gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 save_load_index.c -o save_load_index.exe
  *
  * Supporting collection, tokenization, indexing and ranking functions are
  * included so that saving, reloading, searching and previewing can be tried

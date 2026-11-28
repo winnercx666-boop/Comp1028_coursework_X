@@ -4,8 +4,8 @@ Each task is a complete program in one C file. Each source includes its own entr
 
 | File | Task and functionality |
 | --- | --- |
-| `task6.c` | Task 6: collection/document/index statistics and TXT/CSV reports, with document input, index building, search and preview for demonstration |
-| `task9.c` | Task 9: versioned index saving/loading and validation, with document input, index building, restored search, document preview and status display |
+| `statistics_standalone.c` | Task 6: collection/document/index statistics and TXT/CSV reports, with document input, index building, search and preview for demonstration |
+| `save_load_index.c` | Task 9: versioned index saving/loading and validation, with document input, index building, restored search, document preview and status display |
 
 The Task 6 program contains the statistics/reporting module. The Task 9 program contains the persistence module. Both retain the shared document-processing and index support they need, together with the full MIT license notice.
 
@@ -15,15 +15,15 @@ Run these commands from the repository root in PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Path build -Force | Out-Null
-gcc -std=c17 -O2 -Wall -Wextra -Wpedantic task6.c -o build/task6.exe
-gcc -std=c17 -O2 -Wall -Wextra -Wpedantic task9.c -o build/task9.exe
-.\build\task6.exe
+gcc -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_standalone.c -o build/statistics_standalone.exe
+gcc -std=c17 -O2 -Wall -Wextra -Wpedantic save_load_index.c -o build/save_load_index.exe
+.\build\statistics_standalone.exe
 ```
 
 Run Task 9 with:
 
 ```powershell
-.\build\task9.exe
+.\build\save_load_index.exe
 ```
 
 Compile each source separately as its own program. Both files define `main` and include shared implementations.
@@ -72,8 +72,8 @@ To demonstrate persistence, load the sample with option `1`, then save with opti
 When the compiler supplies `dirent.h`, enable the existing folder adapter:
 
 ```powershell
-gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic task6.c -o build/task6_folder.exe
-gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic task9.c -o build/task9_folder.exe
+gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_standalone.c -o build/statistics_standalone_folder.exe
+gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic save_load_index.c -o build/save_load_index_folder.exe
 ```
 
 At menu option `1`, use `examples/documents` when running from the repository root.

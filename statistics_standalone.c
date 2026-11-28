@@ -3,9 +3,9 @@
  * Complete standalone C17 program; no project header files are required.
  *
  * Standard-C build, using a collection list with one document path per line:
- *   gcc -std=c17 -O2 -Wall -Wextra -Wpedantic task6.c -o task6.exe
+ *   gcc -std=c17 -O2 -Wall -Wextra -Wpedantic statistics_standalone.c -o statistics_standalone.exe
  * Optional folder input, when the compiler supplies dirent.h:
- *   gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 task6.c -o task6.exe
+ *   gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 statistics_standalone.c -o statistics_standalone.exe
  *
  * Load and build an index, display statistics, search, preview documents,
  * and export statistics with optional latest search results as TXT or CSV.
