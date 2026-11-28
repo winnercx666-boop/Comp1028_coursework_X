@@ -30,6 +30,17 @@ In this mode, select menu option `1` and enter `examples/collection.txt`. Each n
 
 If GNU Make is available, use `make`, or `make CPPFLAGS=` for collection-list input without the folder adapter. The Makefile creates `coursework.exe` in the project root; `run.cmd` also supports that location.
 
+## Independent Task 6 and Task 9 files
+
+The independently runnable task sources are available directly in the repository root:
+
+| Source | Purpose |
+|---|---|
+| [task6.c](task6.c) | Task 6: statistics and TXT/CSV reports |
+| [task9.c](task9.c) | Task 9: index saving/loading and validation |
+
+Build each standalone source as its own program. The integrated group application uses the five explicit production sources in the build commands above. See the [standalone task guide](docs/standalone-tasks.md) for compilation, sample input and menu instructions.
+
 ## Quick demonstration
 
 1. Select `1` and enter `examples/documents` to load the sample folder and build its index. In the standard-C build, enter `examples/collection.txt` instead.
@@ -66,7 +77,7 @@ Relative output paths use the program's working directory. Paths may contain spa
 | `collection.c` / `collection.h` | Standard-C collection-list input and the optional original folder adapter |
 | `coursework.c` | Menu integration, document preview and recent-query state |
 
-The original function-local index is exposed through `SearchIndex` so search, reporting and persistence can reuse the same posting lists. Compile all five production `.c` files together with their four headers; copying only `statistics.c` and `persistence.c` is insufficient.
+The original function-local index is exposed through `SearchIndex` so search, reporting and persistence can reuse the same posting lists. Compile the five integrated application sources listed in the build commands above; their project headers remain required. The standalone `task6.c` and `task9.c` files are each compiled as a separate program.
 
 ## Statistics and ranking definitions
 
