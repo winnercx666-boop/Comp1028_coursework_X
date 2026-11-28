@@ -15,8 +15,8 @@ Run these commands from the repository root in PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Path build -Force | Out-Null
-gcc -std=c17 -O2 -Wall -Wextra -Wpedantic task-sources/task6.c -o build/task6.exe
-gcc -std=c17 -O2 -Wall -Wextra -Wpedantic task-sources/task9.c -o build/task9.exe
+gcc -std=c17 -O2 -Wall -Wextra -Wpedantic task6.c -o build/task6.exe
+gcc -std=c17 -O2 -Wall -Wextra -Wpedantic task9.c -o build/task9.exe
 .\build\task6.exe
 ```
 
@@ -36,7 +36,7 @@ examples/collection.txt
 
 Document paths in the list are resolved relative to the list's directory. The supplied sample has 3 documents, including an empty document, 5 word occurrences, 3 unique words and 4 term-document relationships.
 
-If you run an executable with `task-sources` as the working directory, use `../examples/collection.txt` instead.
+The standalone sources are directly visible in the repository root. Run the executables from the repository root to use the sample paths above.
 
 ## Task 6 menu
 
@@ -72,11 +72,11 @@ To demonstrate persistence, load the sample with option `1`, then save with opti
 When the compiler supplies `dirent.h`, enable the existing folder adapter:
 
 ```powershell
-gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic task-sources/task6.c -o build/task6_folder.exe
-gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic task-sources/task9.c -o build/task9_folder.exe
+gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic task6.c -o build/task6_folder.exe
+gcc -DENABLE_DIRECTORY_INPUT -std=c17 -O2 -Wall -Wextra -Wpedantic task9.c -o build/task9_folder.exe
 ```
 
-At menu option `1`, use `examples/documents` when running from the repository root, or `../examples/documents` when running from this directory.
+At menu option `1`, use `examples/documents` when running from the repository root.
 
 ## Validation
 
